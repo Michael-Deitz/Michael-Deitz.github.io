@@ -1,1 +1,244 @@
-(()=>{'use strict';const c=document.getElementById('game'),x=c.getContext('2d'),sp=document.getElementById('speed'),sc=document.getElementById('score'),be=document.getElementById('best'),st=document.getElementById('start'),mode=document.getElementById('mode'),ctrl=document.getElementById('controls');let W=0,H=0,d=1,last=0,run=false,camX=0,camY=0,score=0,best=Number(localStorage.getItem('driftBest')||0),tilt=0,control='buttons';be.textContent=best;const inp={l:false,r:false,g:false,b:false,h:false};const car={x:0,y:130,a:-Math.PI/2,vx:0,vy:0,w:34,l:66,max:19,eng:13.5,br:18,steer:2.35,grip:7.2,dgrip:2.0,hgrip:.5};function resize(){d=Math.min(devicePixelRatio||1,2);W=innerWidth;H=innerHeight;c.width=W*d;c.height=H*d;c.style.width=W+'px';c.style.height=H+'px';x.setTransform(d,0,0,d,0,0)}addEventListener('resize',resize);resize();function ws(px,py){return{x:px-camX+W/2,y:py-camY+H/2}}function rr(px,py,w,h,r){x.beginPath();x.roundRect(px,py,w,h,r)}function track(){x.fillStyle='#426a3e';x.fillRect(0,0,W,H);let p=ws(0,0);x.save();x.translate(p.x,p.y);x.fillStyle='#34383c';rr(-520,-360,1040,720,55);x.fill();x.strokeStyle='#a6adb2';x.lineWidth=10;rr(-520,-360,1040,720,55);x.stroke();x.fillStyle='#416c3f';x.beginPath();x.ellipse(0,0,120,85,0,0,Math.PI*2);x.fill();x.strokeStyle='#d74a3d';x.lineWidth=13;x.setLineDash([28,24]);x.beginPath();x.ellipse(0,0,132,97,0,0,Math.PI*2);x.stroke();x.strokeStyle='#ffffff55';x.lineWidth=4;x.setLineDash([22,18]);x.beginPath();x.ellipse(-220,0,160,115,0,0,Math.PI*2);x.ellipse(220,0,160,115,0,0,Math.PI*2);x.stroke();x.setLineDash([]);x.restore()}let smoke=[],skids=[];function effects(){x.strokeStyle='#1119';x.lineWidth=3;for(const s of skids){let a=ws(s.x1,s.y1),b=ws(s.x2,s.y2);x.globalAlpha=Math.min(1,s.life/2);x.beginPath();x.moveTo(a.x,a.y);x.lineTo(b.x,b.y);x.stroke()}x.globalAlpha=1;for(const p of smoke){let q=ws(p.x,p.y);x.globalAlpha=Math.max(0,p.life);x.fillStyle='#ddd';x.beginPath();x.arc(q.x,q.y,p.r,0,Math.PI*2);x.fill()}x.globalAlpha=1}function drawCar(){let p=ws(car.x,car.y);x.save();x.translate(p.x,p.y);x.rotate(car.a+Math.PI/2);x.fillStyle='#9e1f2b';rr(-car.w/2,-car.l/2,car.w,car.l,7);x.fill();x.fillStyle='#111820';rr(-car.w*.34,-car.l*.18,car.w*.68,car.l*.3,5);x.fill();x.fillStyle='#171717';x.fillRect(-car.w*.63,-car.l*.31,7,18);x.fillRect(car.w*.43,-car.l*.31,7,18);x.fillRect(-car.w*.63,car.l*.12,7,18);x.fillRect(car.w*.43,car.l*.12,7,18);x.restore()}function speed(){return Math.hypot(car.vx,car.vy)}function upd(dt){let steer=(inp.r?1:0)-(inp.l?1:0);if(control==='tilt')steer=Math.max(-1,Math.min(1,tilt));let f={x:Math.cos(car.a),y:Math.sin(car.a)},r={x:Math.cos(car.a+Math.PI/2),y:Math.sin(car.a+Math.PI/2)},fs=car.vx*f.x+car.vy*f.y,ls=car.vx*r.x+car.vy*r.y;if(inp.g&&fs<car.max){car.vx+=f.x*car.eng*dt;car.vy+=f.y*car.eng*dt}if(inp.b){if(fs>1){let m=speed();car.vx-=car.vx/m*car.br*dt;car.vy-=car.vy/m*car.br*dt}else{car.vx-=f.x*car.eng*.55*dt;car.vy-=f.y*car.eng*.55*dt}}car.a+=steer*car.steer*Math.min(1,Math.abs(fs)/4)*(fs>=0?1:-1)*dt;let g=inp.h?car.hgrip:(Math.abs(ls)>3?car.dgrip:car.grip);car.vx-=r.x*ls*g*dt;car.vy-=r.y*ls*g*dt;car.vx*=Math.pow(.992,dt*60);car.vy*=Math.pow(.992,dt*60);car.x+=car.vx*60*dt;car.y+=car.vy*60*dt;if(Math.abs(car.x)>490){car.x=Math.sign(car.x)*490;car.vx*=-.3}if(Math.abs(car.y)>330){car.y=Math.sign(car.y)*330;car.vy*=-.3}let slip=Math.atan2(ls,Math.abs(fs)+.01),dr=Math.abs(slip)>.28&&speed()>5;if(dr){score+=(Math.abs(slip)*65+speed()*3.2)*dt;if(Math.random()<dt*34){let bx=car.x-Math.cos(car.a)*car.l*.38,by=car.y-Math.sin(car.a)*car.l*.38;smoke.push({x:bx,y:by,r:5+Math.random()*7,life:.8});let sx=Math.cos(car.a+Math.PI/2)*18,sy=Math.sin(car.a+Math.PI/2)*18;skids.push({x1:bx-sx,y1:by-sy,x2:bx+sx,y2:by+sy,life:12})}}smoke.forEach(p=>{p.life-=dt;p.r+=dt*8});smoke=smoke.filter(p=>p.life>0);skids.forEach(s=>s.life-=dt);skids=skids.filter(s=>s.life>0);camX+=(car.x-camX)*Math.min(1,dt*5);camY+=(car.y-camY)*Math.min(1,dt*5);sp.textContent=Math.round(speed()*4.1)+' MPH';sc.textContent=Math.floor(score);if(score>best){best=score;be.textContent=Math.floor(best);localStorage.setItem('driftBest',Math.floor(best))}}function draw(){track();effects();drawCar()}function loop(t){if(!run)return;let dt=Math.min((t-last)/1000,.033);last=t;upd(dt);draw();requestAnimationFrame(loop)}function bind(id,k){let b=document.getElementById(id),on=e=>{e.preventDefault();inp[k]=true},off=e=>{e.preventDefault();inp[k]=false};b.addEventListener('pointerdown',on);b.addEventListener('pointerup',off);b.addEventListener('pointercancel',off);b.addEventListener('pointerleave',off)}bind('left','l');bind('right','r');bind('gas','g');bind('brake','b');bind('hand','h');async function tiltOn(){try{if(DeviceOrientationEvent&&typeof DeviceOrientationEvent.requestPermission==='function'){let q=await DeviceOrientationEvent.requestPermission();if(q!=='granted')throw 0}addEventListener('deviceorientation',e=>tilt=Math.max(-1,Math.min(1,Number(e.gamma||0)/28)))}catch(e){control='buttons';mode.value='buttons';ctrl.firstElementChild.style.visibility='visible'}}document.getElementById('startBtn').onclick=async()=>{control=mode.value;if(control==='tilt'){await tiltOn();ctrl.firstElementChild.style.visibility='hidden'}else ctrl.firstElementChild.style.visibility='visible';car.x=0;car.y=130;car.a=-Math.PI/2;car.vx=car.vy=0;score=0;camX=car.x;camY=car.y;st.classList.remove('show');run=true;last=performance.now();requestAnimationFrame(loop)};draw()})();
+(() => {
+'use strict';
+
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+const speedText = document.getElementById('speed');
+const angleText = document.getElementById('angle');
+const startScreen = document.getElementById('startScreen');
+
+let width = 0;
+let height = 0;
+let ratio = 1;
+let lastTime = 0;
+let running = false;
+let cameraX = 0;
+let cameraY = 0;
+
+const input = { left:false, right:false, gas:false, brake:false, hand:false };
+
+const car = {
+  x:0, y:130,
+  angle:-Math.PI/2,
+  vx:0, vy:0,
+  width:34, length:66,
+  engineForce:13.5,
+  brakeForce:18,
+  maxForward:19,
+  maxReverse:6,
+  steerRate:2.25,
+  normalGrip:7.2,
+  driftGrip:2.1,
+  handGrip:0.45
+};
+
+function resize(){
+  ratio = Math.min(window.devicePixelRatio || 1, 2);
+  width = window.innerWidth;
+  height = window.innerHeight;
+  canvas.width = Math.floor(width * ratio);
+  canvas.height = Math.floor(height * ratio);
+  canvas.style.width = width + 'px';
+  canvas.style.height = height + 'px';
+  ctx.setTransform(ratio,0,0,ratio,0,0);
+  draw();
+}
+window.addEventListener('resize', resize);
+window.addEventListener('orientationchange', () => setTimeout(resize, 200));
+resize();
+
+function toScreen(x,y){
+  return { x:x-cameraX+width/2, y:y-cameraY+height/2 };
+}
+
+function drawRoundedRect(x,y,w,h,r,fill){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);
+  ctx.lineTo(x+w-r,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+r);
+  ctx.lineTo(x+w,y+h-r);
+  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);
+  ctx.lineTo(x+r,y+h);
+  ctx.quadraticCurveTo(x,y+h,x,y+h-r);
+  ctx.lineTo(x,y+r);
+  ctx.quadraticCurveTo(x,y,x+r,y);
+  ctx.closePath();
+  if(fill) ctx.fill();
+}
+
+function drawTrack(){
+  ctx.fillStyle = '#456d3f';
+  ctx.fillRect(0,0,width,height);
+
+  const p = toScreen(0,0);
+  ctx.save();
+  ctx.translate(p.x,p.y);
+
+  ctx.fillStyle = '#34383d';
+  drawRoundedRect(-520,-350,1040,700,50,true);
+
+  ctx.strokeStyle = '#b2b7bb';
+  ctx.lineWidth = 9;
+  ctx.beginPath();
+  ctx.rect(-515,-345,1030,690);
+  ctx.stroke();
+
+  ctx.fillStyle = '#426d40';
+  ctx.beginPath();
+  ctx.ellipse(0,0,120,82,0,0,Math.PI*2);
+  ctx.fill();
+
+  ctx.strokeStyle = '#d94b3e';
+  ctx.lineWidth = 12;
+  ctx.setLineDash([28,23]);
+  ctx.beginPath();
+  ctx.ellipse(0,0,134,96,0,0,Math.PI*2);
+  ctx.stroke();
+
+  ctx.strokeStyle = 'rgba(255,255,255,.30)';
+  ctx.lineWidth = 4;
+  ctx.setLineDash([22,18]);
+  ctx.beginPath();
+  ctx.ellipse(-220,0,160,112,0,0,Math.PI*2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(220,0,160,112,0,0,Math.PI*2);
+  ctx.stroke();
+  ctx.setLineDash([]);
+
+  const cones=[[-360,-90],[-360,90],[360,-90],[360,90],[0,-145],[0,145]];
+  ctx.fillStyle='#ff7300';
+  for(const point of cones){
+    const x=point[0], y=point[1];
+    ctx.beginPath();
+    ctx.moveTo(x,y-12);
+    ctx.lineTo(x-8,y+10);
+    ctx.lineTo(x+8,y+10);
+    ctx.closePath();
+    ctx.fill();
+  }
+
+  ctx.restore();
+}
+
+function drawCar(){
+  const p = toScreen(car.x,car.y);
+  ctx.save();
+  ctx.translate(p.x,p.y);
+  ctx.rotate(car.angle + Math.PI/2);
+
+  ctx.fillStyle='rgba(0,0,0,.28)';
+  drawRoundedRect(-car.width/2+5,-car.length/2+6,car.width,car.length,7,true);
+
+  ctx.fillStyle='#a92331';
+  drawRoundedRect(-car.width/2,-car.length/2,car.width,car.length,7,true);
+
+  ctx.fillStyle='#101820';
+  drawRoundedRect(-car.width*.34,-car.length*.17,car.width*.68,car.length*.30,4,true);
+
+  ctx.fillStyle='#151515';
+  ctx.fillRect(-car.width*.62,-car.length*.30,7,18);
+  ctx.fillRect(car.width*.42,-car.length*.30,7,18);
+  ctx.fillRect(-car.width*.62,car.length*.12,7,18);
+  ctx.fillRect(car.width*.42,car.length*.12,7,18);
+
+  ctx.fillStyle='#ffe0a0';
+  ctx.fillRect(-car.width*.34,-car.length*.48,9,5);
+  ctx.fillRect(car.width*.08,-car.length*.48,9,5);
+
+  ctx.restore();
+}
+
+function magnitude(){
+  return Math.hypot(car.vx,car.vy);
+}
+
+function update(dt){
+  const steer = (input.right?1:0) - (input.left?1:0);
+  const forward = {x:Math.cos(car.angle), y:Math.sin(car.angle)};
+  const right = {x:Math.cos(car.angle+Math.PI/2), y:Math.sin(car.angle+Math.PI/2)};
+
+  const forwardSpeed = car.vx*forward.x + car.vy*forward.y;
+  const lateralSpeed = car.vx*right.x + car.vy*right.y;
+
+  if(input.gas && forwardSpeed < car.maxForward){
+    car.vx += forward.x * car.engineForce * dt;
+    car.vy += forward.y * car.engineForce * dt;
+  }
+
+  if(input.brake){
+    if(forwardSpeed > 1){
+      const m = magnitude() || 1;
+      car.vx -= (car.vx/m) * car.brakeForce * dt;
+      car.vy -= (car.vy/m) * car.brakeForce * dt;
+    } else if(forwardSpeed > -car.maxReverse) {
+      car.vx -= forward.x * car.engineForce * .55 * dt;
+      car.vy -= forward.y * car.engineForce * .55 * dt;
+    }
+  }
+
+  const steerStrength = Math.min(1, Math.abs(forwardSpeed)/4);
+  const direction = forwardSpeed >= 0 ? 1 : -1;
+  car.angle += steer * car.steerRate * steerStrength * direction * dt;
+
+  const grip = input.hand ? car.handGrip : (Math.abs(lateralSpeed)>3 ? car.driftGrip : car.normalGrip);
+  car.vx -= right.x * lateralSpeed * grip * dt;
+  car.vy -= right.y * lateralSpeed * grip * dt;
+
+  car.vx *= Math.pow(.992, dt*60);
+  car.vy *= Math.pow(.992, dt*60);
+
+  car.x += car.vx * 60 * dt;
+  car.y += car.vy * 60 * dt;
+
+  if(Math.abs(car.x)>490){car.x=Math.sign(car.x)*490;car.vx*=-.28;car.vy*=.70}
+  if(Math.abs(car.y)>325){car.y=Math.sign(car.y)*325;car.vy*=-.28;car.vx*=.70}
+
+  cameraX += (car.x-cameraX)*Math.min(1,dt*5);
+  cameraY += (car.y-cameraY)*Math.min(1,dt*5);
+
+  const slip = Math.atan2(lateralSpeed,Math.abs(forwardSpeed)+.01);
+  speedText.textContent = Math.round(magnitude()*4.1)+' MPH';
+  angleText.textContent = Math.round(Math.abs(slip*180/Math.PI))+'°';
+}
+
+function draw(){
+  drawTrack();
+  drawCar();
+}
+
+function loop(time){
+  if(!running) return;
+  const dt = Math.min((time-lastTime)/1000,.033);
+  lastTime = time;
+  update(dt);
+  draw();
+  requestAnimationFrame(loop);
+}
+
+function bindHold(id,key){
+  const button=document.getElementById(id);
+  const down=e=>{e.preventDefault();input[key]=true};
+  const up=e=>{e.preventDefault();input[key]=false};
+  button.addEventListener('pointerdown',down);
+  button.addEventListener('pointerup',up);
+  button.addEventListener('pointercancel',up);
+  button.addEventListener('pointerleave',up);
+}
+bindHold('leftBtn','left');
+bindHold('rightBtn','right');
+bindHold('gasBtn','gas');
+bindHold('brakeBtn','brake');
+bindHold('handBtn','hand');
+
+document.getElementById('startBtn').addEventListener('click',()=>{
+  car.x=0;car.y=130;car.angle=-Math.PI/2;car.vx=0;car.vy=0;
+  cameraX=car.x;cameraY=car.y;
+  startScreen.classList.remove('show');
+  running=true;
+  lastTime=performance.now();
+  requestAnimationFrame(loop);
+});
+
+draw();
+})();
