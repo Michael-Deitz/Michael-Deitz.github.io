@@ -1,6 +1,6 @@
 {
-  "name": "Drift Test",
-  "short_name": "Drift Test",
+  "name": "Drift Test V1.1",
+  "short_name": "Drift V1.1",
   "start_url": "./",
   "display": "standalone",
   "orientation": "landscape",
