@@ -15,8 +15,10 @@ window.CAR_CONFIG = {
     maxAngleDeg: 55,
     inputSpeedDegPerSec: 150,
     returnSpeedDegPerSec: 210,
-    speedReductionStartMps: 18,
-    speedReductionAmount: 0.22
+    speedReductionStartMps: 4,
+    speedReductionFullMps: 18,
+    speedReductionAmount: 0.62,
+    driftFullLockRearSlipRad: 0.16
   },
 
   engine: {
@@ -27,14 +29,15 @@ window.CAR_CONFIG = {
   },
 
   brakes: {
-    footBrakeForce: 12500,
-    handbrakeRearGripMultiplier: 0.15
+    footBrakeForce: 19000,
+    handbrakeRearGripMultiplier: 0.15,
+    handbrakeRearLongitudinalForce: 7000
   },
 
   tires: {
     frontCorneringStiffness: 9800,
     rearCorneringStiffness: 6500,
-    frontMaxLateralForce: 10500,
+    frontMaxLateralForce: 11800,
     rearMaxLateralForce: 6600,
     rearDriveSlipStart: 0.55,
     rearDriveGripMultiplier: 0.48,

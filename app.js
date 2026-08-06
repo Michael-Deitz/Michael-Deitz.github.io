@@ -7,6 +7,7 @@ const speedText=document.getElementById('speed');
 const angleText=document.getElementById('angle');
 const stateText=document.getElementById('state');
 const frontSlipText=document.getElementById('frontSlip');
+const controlStateText=document.getElementById('controlState');
 const rotate=document.getElementById('rotateScreen');
 
 let W=0,H=0,D=1,last=performance.now(),raf=0;
@@ -22,6 +23,7 @@ const car={
 
 let smoke=[];
 let skids=[];
+let previousRearSlip=0;
 
 // Local car coordinates:
 // lateral: negative = left, positive = right
@@ -39,7 +41,7 @@ function resetCar(){
   car.x=0;car.y=0;car.heading=-Math.PI/2;
   car.vx=0;car.vy=0;car.yawRate=0;car.steerAngle=0;
   cameraX=car.x;cameraY=car.y;
-  smoke=[];skids=[];
+  smoke=[];skids=[];previousRearSlip=0;
 }
 
 function syncOrientation(){
@@ -153,12 +155,28 @@ function drawCar(){
 function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
 function magnitude(x,y){return Math.hypot(x,y)}
 
-function updateSteering(dt,forwardSpeed){
+function updateSteering(dt,forwardSpeed,rearSlipEstimate){
   const targetInput=(input.right?1:0)-(input.left?1:0);
   const maxBase=CFG.steering.maxAngleDeg*Math.PI/180;
-  const reduction=forwardSpeed>CFG.steering.speedReductionStartMps
-    ? CFG.steering.speedReductionAmount
-    : 0;
+
+  // During normal grip driving, reduce effective lock progressively with speed.
+  // When the rear is already sliding, restore full lock for countersteering.
+  let reduction=0;
+  const driftingRear=rearSlipEstimate>=CFG.steering.driftFullLockRearSlipRad;
+
+  if(!driftingRear && forwardSpeed>CFG.steering.speedReductionStartMps){
+    const range=Math.max(
+      0.1,
+      CFG.steering.speedReductionFullMps-CFG.steering.speedReductionStartMps
+    );
+    const t=clamp(
+      (forwardSpeed-CFG.steering.speedReductionStartMps)/range,
+      0,
+      1
+    );
+    reduction=CFG.steering.speedReductionAmount*t;
+  }
+
   const maxAngle=maxBase*(1-reduction);
   const target=targetInput*maxAngle;
 
@@ -179,7 +197,7 @@ function update(dt){
   const bodyForwardSpeed=car.vx*forward.x+car.vy*forward.y;
   const bodyLateralSpeed=car.vx*right.x+car.vy*right.y;
 
-  updateSteering(dt,Math.abs(bodyForwardSpeed));
+  updateSteering(dt,Math.abs(bodyForwardSpeed),previousRearSlip);
 
   let totalFx=0,totalFy=0,totalTorque=0;
   let rearSlipSum=0;
@@ -213,7 +231,7 @@ function update(dt){
       : CFG.tires.rearMaxLateralForce;
 
     let driveForce=0;
-    if(tire.drive&&input.gas){
+    if(tire.drive&&input.gas&&!input.brake){
       driveForce=CFG.engine.driveForce/2;
       maxLateral*=CFG.tires.rearDriveGripMultiplier;
     }
@@ -229,13 +247,22 @@ function update(dt){
     }
 
     let brakeForce=0;
+
+    // Foot brake acts at all four wheels opposite their longitudinal motion.
     if(input.brake){
-      const sign=Math.sign(longSpeed||1);
-      brakeForce=-sign*CFG.brakes.footBrakeForce/4;
+      if(Math.abs(bodyForwardSpeed)>0.8){
+        const sign=Math.sign(longSpeed||bodyForwardSpeed||1);
+        brakeForce=-sign*CFG.brakes.footBrakeForce/4;
+      }else if(tire.drive){
+        // Brake button becomes reverse only once nearly stopped.
+        brakeForce=-CFG.engine.reverseForce/2;
+      }
     }
 
-    if(tire.drive&&input.brake&&bodyForwardSpeed<1){
-      brakeForce=-CFG.engine.reverseForce/2;
+    // Handbrake locks only the rear wheels longitudinally.
+    if(tire.drive&&input.hand){
+      const rearLongSign=Math.sign(longSpeed||bodyForwardSpeed||1);
+      brakeForce+=-rearLongSign*CFG.brakes.handbrakeRearLongitudinalForce/2;
     }
 
     const fx=tireForward.x*(driveForce+brakeForce)+tireRight.x*lateralForce;
@@ -286,6 +313,7 @@ function update(dt){
   car.yawRate+=(totalTorque/CFG.chassis.yawInertia)*dt;
 
   const averageRearSlip=rearSlipCount?rearSlipSum/rearSlipCount:0;
+  previousRearSlip=averageRearSlip;
   const averageFrontSlip=frontSlipCount?frontSlipSum/frontSlipCount:0;
   const drifting=averageRearSlip>0.18&&Math.abs(bodyForwardSpeed)>5;
 
@@ -332,6 +360,7 @@ function update(dt){
   angleText.textContent=Math.round(Math.abs(driftAngle*180/Math.PI))+'°';
   stateText.textContent=drifting?'DRIFT':'GRIP';
   frontSlipText.textContent='F '+Math.round(averageFrontSlip*180/Math.PI)+'°';
+  controlStateText.textContent=input.hand?'E-BRAKE':input.brake?'BRAKE':input.gas?'GAS':'COAST';
 }
 
 function draw(){drawTrack();drawEffects();drawCar()}
