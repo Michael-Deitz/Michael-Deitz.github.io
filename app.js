@@ -10,6 +10,7 @@ const frontSlipText=document.getElementById('frontSlip');
 const controlStateText=document.getElementById('controlState');
 const rearSlipText=document.getElementById('rearSlip');
 const steerHudText=document.getElementById('steerHud');
+const transferHudText=document.getElementById('transferHud');
 const rotate=document.getElementById('rotateScreen');
 
 let W=0,H=0,D=1,last=performance.now(),raf=0;
@@ -31,11 +32,14 @@ let previousRearSlip=0;
 // lateral: negative = left, positive = right
 // longitudinal: positive = front, negative = rear
 const tires=[
-  {name:'FL',lateral:-CFG.chassis.trackWidth/2,longitudinal: CFG.chassis.cgToFrontAxle,steer:true, drive:false},
-  {name:'FR',lateral: CFG.chassis.trackWidth/2,longitudinal: CFG.chassis.cgToFrontAxle,steer:true, drive:false},
-  {name:'RL',lateral:-CFG.chassis.trackWidth/2,longitudinal:-CFG.chassis.cgToRearAxle, steer:false,drive:true},
-  {name:'RR',lateral: CFG.chassis.trackWidth/2,longitudinal:-CFG.chassis.cgToRearAxle, steer:false,drive:true}
+  {name:'FL',lateral:-CFG.chassis.trackWidth/2,longitudinal: CFG.chassis.cgToFrontAxle,steer:true, drive:false,slipMemory:0},
+  {name:'FR',lateral: CFG.chassis.trackWidth/2,longitudinal: CFG.chassis.cgToFrontAxle,steer:true, drive:false,slipMemory:0},
+  {name:'RL',lateral:-CFG.chassis.trackWidth/2,longitudinal:-CFG.chassis.cgToRearAxle, steer:false,drive:true,slipMemory:0},
+  {name:'RR',lateral: CFG.chassis.trackWidth/2,longitudinal:-CFG.chassis.cgToRearAxle, steer:false,drive:true,slipMemory:0}
 ];
+
+let transitionLoad=0;
+let previousSteerDirection=0;
 
 function isLandscape(){return innerWidth>innerHeight}
 
@@ -43,7 +47,7 @@ function resetCar(){
   car.x=0;car.y=0;car.heading=-Math.PI/2;
   car.vx=0;car.vy=0;car.yawRate=0;car.steerAngle=0;
   cameraX=car.x;cameraY=car.y;
-  smoke=[];skids=[];previousRearSlip=0;
+  smoke=[];skids=[];previousRearSlip=0;transitionLoad=0;previousSteerDirection=0;tires.forEach(t=>t.slipMemory=0);
 }
 
 function syncOrientation(){
@@ -220,6 +224,26 @@ function update(dt){
 
   updateSteering(dt,Math.abs(bodyForwardSpeed),previousRearSlip);
 
+  const currentSteerDirection=Math.sign(car.steerAngle);
+  if(
+    currentSteerDirection!==0 &&
+    previousSteerDirection!==0 &&
+    currentSteerDirection!==previousSteerDirection &&
+    Math.abs(bodyForwardSpeed)>5
+  ){
+    transitionLoad=Math.min(
+      1,
+      transitionLoad+CFG.assists.transitionBuild
+    );
+  }
+  if(currentSteerDirection!==0){
+    previousSteerDirection=currentSteerDirection;
+  }
+  transitionLoad=Math.max(
+    0,
+    transitionLoad-CFG.assists.transitionDecayPerSec*dt
+  );
+
   const speedBeforeForces=Math.hypot(car.vx,car.vy);
 
   let totalFx=0,totalFy=0,totalTorque=0;
@@ -262,6 +286,41 @@ function update(dt){
 
     if(tire.drive&&input.hand){
       maxLateral*=CFG.brakes.handbrakeRearGripMultiplier;
+    }
+
+    // Persistent rear tire slip memory.
+    // Grip drops progressively while spinning/sliding and returns slowly.
+    if(tire.drive){
+      const slipDemand=Math.min(
+        1,
+        Math.abs(slipAngle)/0.42 +
+        (input.gas?0.26:0) +
+        (input.hand?0.55:0)
+      );
+
+      if(slipDemand>0.24){
+        tire.slipMemory=Math.min(
+          1,
+          tire.slipMemory+CFG.tires.rearSlipBuildRate*slipDemand*dt
+        );
+      }else{
+        const recovery=input.gas
+          ? CFG.tires.rearSlipRecoveryRate*(1-CFG.tires.rearSlipThrottleHold)
+          : CFG.tires.rearSlipRecoveryRate;
+
+        tire.slipMemory=Math.max(
+          0,
+          tire.slipMemory-recovery*dt
+        );
+      }
+
+      const memoryGrip=
+        1-(1-CFG.tires.rearSlipMinimumGripMultiplier)*tire.slipMemory;
+
+      maxLateral*=memoryGrip;
+      maxLateral*=1-transitionLoad*(1-CFG.assists.transitionRearGripMultiplier);
+    }else{
+      maxLateral*=1+transitionLoad*(CFG.assists.transitionFrontGripMultiplier-1);
     }
 
     // Powered rear tires lose lateral capacity when throttle and steering
@@ -395,7 +454,16 @@ function update(dt){
 
   car.vx+=(totalFx/CFG.chassis.mass)*dt;
   car.vy+=(totalFy/CFG.chassis.mass)*dt;
-  car.yawRate+=(totalTorque/CFG.chassis.yawInertia)*dt;
+
+  const transitionDirection=Math.sign(car.steerAngle||previousSteerDirection);
+  const transitionTorque=
+    transitionDirection *
+    transitionLoad *
+    CFG.assists.transitionYawTorque;
+
+  car.yawRate+=(
+    totalTorque+transitionTorque
+  )/CFG.chassis.yawInertia*dt;
 
   // Arcade scrub-loss cap:
   // tire slip may redirect momentum, but cannot act like a brake pedal.
@@ -476,6 +544,7 @@ function update(dt){
   frontSlipText.textContent='F '+Math.round(averageFrontSlip*180/Math.PI)+'°';
   rearSlipText.textContent='R '+Math.round(averageRearSlip*180/Math.PI)+'°';
   steerHudText.textContent='S '+Math.round(Math.abs(car.steerAngle)*180/Math.PI)+'°';
+  transferHudText.textContent='T '+Math.round(transitionLoad*100)+'%';
   controlStateText.textContent=input.hand?'E-BRAKE':input.brake?'BRAKE':input.gas?'GAS':'COAST';
 }
 

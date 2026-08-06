@@ -52,6 +52,10 @@ window.CAR_CONFIG = {
     rearThrottleLongitudinalPriority: 0.92,
     maxCoastScrubDecelMps2: 1.35,
     minimumThrottleSpeedRetention: 0.992,
+    rearSlipBuildRate: 3.2,
+    rearSlipRecoveryRate: 0.48,
+    rearSlipThrottleHold: 0.78,
+    rearSlipMinimumGripMultiplier: 0.34,
     lowSpeedAssist: 0.35
   },
 
@@ -60,6 +64,11 @@ window.CAR_CONFIG = {
     yawDampingGrip: 0.9975,
     yawDampingDrift: 0.9992,
     transitionAssist: 0.18,
+    transitionBuild: 0.95,
+    transitionDecayPerSec: 1.35,
+    transitionRearGripMultiplier: 0.58,
+    transitionFrontGripMultiplier: 1.12,
+    transitionYawTorque: 1450,
     driftAngleLimitDeg: 68
   },
 
