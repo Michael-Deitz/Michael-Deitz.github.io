@@ -262,6 +262,18 @@ function update(dt){
       maxLateral*=CFG.brakes.handbrakeRearGripMultiplier;
     }
 
+    // Powered rear tires lose lateral capacity when throttle and steering
+    // demand exceed their available grip. This creates power oversteer.
+    const powerOversteer =
+      tire.drive &&
+      input.gas &&
+      Math.abs(bodyForwardSpeed)>CFG.tires.powerOversteerStartMps &&
+      Math.abs(car.steerAngle)>CFG.tires.powerOversteerSteerRad;
+
+    if(powerOversteer){
+      maxLateral*=CFG.tires.powerOversteerRearGripMultiplier;
+    }
+
     let lateralForce=clamp(-slipAngle*stiffness,-maxLateral,maxLateral);
 
     if(Math.abs(longSpeed)<2){
@@ -276,7 +288,6 @@ function update(dt){
         const sign=Math.sign(longSpeed||bodyForwardSpeed||1);
         brakeForce=-sign*CFG.brakes.footBrakeForce/4;
       }else if(tire.drive){
-        // Brake button becomes reverse only once nearly stopped.
         brakeForce=-CFG.engine.reverseForce/2;
       }
     }
@@ -287,8 +298,34 @@ function update(dt){
       brakeForce+=-rearLongSign*CFG.brakes.handbrakeRearLongitudinalForce/2;
     }
 
-    const fx=tireForward.x*(driveForce+brakeForce)+tireRight.x*lateralForce;
-    const fy=tireForward.y*(driveForce+brakeForce)+tireRight.y*lateralForce;
+    let longitudinalForce=driveForce+brakeForce;
+
+    // Combined tire-force limit: a tire cannot provide maximum forward and
+    // lateral force simultaneously. Rear tires have a smaller combined budget
+    // so throttle can break them loose.
+    const combinedGrip=tire.steer
+      ? CFG.tires.frontCombinedGrip
+      : CFG.tires.rearCombinedGrip;
+
+    const forceBudget=maxLateral*combinedGrip;
+    const requestedMagnitude=Math.hypot(longitudinalForce,lateralForce);
+
+    if(requestedMagnitude>forceBudget && requestedMagnitude>0){
+      const scale=forceBudget/requestedMagnitude;
+      longitudinalForce*=scale;
+      lateralForce*=scale;
+    }
+
+    // Front scrub should not behave like a brake pedal. Only retain a small
+    // amount of drag from extreme front slip.
+    if(tire.steer && Math.abs(slipAngle)>0.35 && !input.brake){
+      longitudinalForce-=Math.sign(longSpeed||1) *
+        Math.abs(lateralForce) *
+        CFG.tires.frontScrubDragMultiplier;
+    }
+
+    const fx=tireForward.x*longitudinalForce+tireRight.x*lateralForce;
+    const fy=tireForward.y*longitudinalForce+tireRight.y*lateralForce;
 
     totalFx+=fx;
     totalFy+=fy;

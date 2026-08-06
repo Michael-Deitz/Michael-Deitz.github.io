@@ -1,19 +1,17 @@
-# Drift Handling Reset V2.5
+# Drift Handling Reset V2.6
 
-Root-cause fixes:
-- Removed excessive yaw damping that was deleting roughly 12% of chassis rotation per frame.
-- Grip-mode steering is limited to 28 degrees.
-- Full 60-degree steering lock becomes available when rear slip reaches drift range.
-- Existing speed-sensitive steering still applies during grip driving.
-- Front tires only smoke under severe high-speed scrub.
-- Rear tires create smoke individually from rear slip and wheelspin.
-- Added steering-angle HUD: S = current steering angle.
+Changes:
+- Normal steering behavior from V2.5 is retained.
+- Added a combined longitudinal/lateral tire-force limit.
+- Front tires no longer convert full-lock scrub into heavy braking.
+- Powered rear tires lose lateral grip under throttle and steering demand.
+- Rear tires have a smaller combined force budget than the front tires.
+- Power oversteer begins above approximately 6.5 m/s.
+- Drift yaw damping was reduced slightly.
+- Engine power was not reduced.
 
-Power was not reduced.
-
-Upload all five files together:
-- index.html
-- style.css
-- car-config.js
-- app.js
-- manifest.json
+Testing:
+1. Confirm normal low- and medium-speed steering still works.
+2. Build speed while holding gas.
+3. Apply hard steering.
+4. The car should retain momentum and begin rotating the rear outward rather than stopping.

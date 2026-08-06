@@ -43,6 +43,12 @@ window.CAR_CONFIG = {
     rearMaxLateralForce: 7000,
     rearDriveSlipStart: 0.55,
     rearDriveGripMultiplier: 0.48,
+    frontCombinedGrip: 1.00,
+    rearCombinedGrip: 0.88,
+    powerOversteerStartMps: 6.5,
+    powerOversteerSteerRad: 0.16,
+    powerOversteerRearGripMultiplier: 0.52,
+    frontScrubDragMultiplier: 0.06,
     lowSpeedAssist: 0.35
   },
 
