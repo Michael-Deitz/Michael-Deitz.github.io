@@ -48,7 +48,10 @@ window.CAR_CONFIG = {
     powerOversteerStartMps: 6.5,
     powerOversteerSteerRad: 0.16,
     powerOversteerRearGripMultiplier: 0.52,
-    frontScrubDragMultiplier: 0.06,
+    frontScrubDragMultiplier: 0.015,
+    rearThrottleLongitudinalPriority: 0.92,
+    maxCoastScrubDecelMps2: 1.35,
+    minimumThrottleSpeedRetention: 0.992,
     lowSpeedAssist: 0.35
   },
 

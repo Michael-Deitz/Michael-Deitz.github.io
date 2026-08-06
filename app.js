@@ -220,6 +220,8 @@ function update(dt){
 
   updateSteering(dt,Math.abs(bodyForwardSpeed),previousRearSlip);
 
+  const speedBeforeForces=Math.hypot(car.vx,car.vy);
+
   let totalFx=0,totalFy=0,totalTorque=0;
   let rearSlipSum=0;
   let rearSlipCount=0;
@@ -308,12 +310,31 @@ function update(dt){
       : CFG.tires.rearCombinedGrip;
 
     const forceBudget=maxLateral*combinedGrip;
-    const requestedMagnitude=Math.hypot(longitudinalForce,lateralForce);
 
-    if(requestedMagnitude>forceBudget && requestedMagnitude>0){
-      const scale=forceBudget/requestedMagnitude;
-      longitudinalForce*=scale;
-      lateralForce*=scale;
+    if(tire.drive && input.gas && !input.brake){
+      // Rear-wheel-drive arcade priority:
+      // preserve most engine force and sacrifice lateral grip first.
+      const protectedLongitudinal=
+        longitudinalForce*CFG.tires.rearThrottleLongitudinalPriority;
+
+      const remainingBudgetSq=Math.max(
+        0,
+        forceBudget*forceBudget-protectedLongitudinal*protectedLongitudinal
+      );
+
+      const allowedLateral=Math.sqrt(remainingBudgetSq);
+      lateralForce=clamp(lateralForce,-allowedLateral,allowedLateral);
+
+      // Retain the requested engine force instead of scaling it down with
+      // lateral demand. This lets the rear tires spin and rotate the car.
+    }else{
+      const requestedMagnitude=Math.hypot(longitudinalForce,lateralForce);
+
+      if(requestedMagnitude>forceBudget && requestedMagnitude>0){
+        const scale=forceBudget/requestedMagnitude;
+        longitudinalForce*=scale;
+        lateralForce*=scale;
+      }
     }
 
     // Front scrub should not behave like a brake pedal. Only retain a small
@@ -375,6 +396,35 @@ function update(dt){
   car.vx+=(totalFx/CFG.chassis.mass)*dt;
   car.vy+=(totalFy/CFG.chassis.mass)*dt;
   car.yawRate+=(totalTorque/CFG.chassis.yawInertia)*dt;
+
+  // Arcade scrub-loss cap:
+  // tire slip may redirect momentum, but cannot act like a brake pedal.
+  if(!input.brake && !input.hand && speedBeforeForces>0.5){
+    const speedAfterForces=Math.hypot(car.vx,car.vy);
+    const minimumAllowedSpeed=Math.max(
+      0,
+      speedBeforeForces-CFG.tires.maxCoastScrubDecelMps2*dt
+    );
+
+    if(speedAfterForces<minimumAllowedSpeed && speedAfterForces>0.001){
+      const restore=minimumAllowedSpeed/speedAfterForces;
+      car.vx*=restore;
+      car.vy*=restore;
+    }
+  }
+
+  // While accelerating, do not let tire scrub instantly erase momentum.
+  if(input.gas && !input.brake && speedBeforeForces>2){
+    const speedAfterRestore=Math.hypot(car.vx,car.vy);
+    const throttleFloor=
+      speedBeforeForces*CFG.tires.minimumThrottleSpeedRetention;
+
+    if(speedAfterRestore<throttleFloor && speedAfterRestore>0.001){
+      const restore=throttleFloor/speedAfterRestore;
+      car.vx*=restore;
+      car.vy*=restore;
+    }
+  }
 
   const averageRearSlip=rearSlipCount?rearSlipSum/rearSlipCount:0;
   previousRearSlip=averageRearSlip;
