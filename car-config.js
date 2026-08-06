@@ -13,12 +13,13 @@ window.CAR_CONFIG = {
 
   steering: {
     maxAngleDeg: 60,
+    gripMaxAngleDeg: 28,
     inputSpeedDegPerSec: 150,
     returnSpeedDegPerSec: 210,
     speedReductionStartMps: 4,
     speedReductionFullMps: 18,
     speedReductionAmount: 0.66,
-    driftFullLockRearSlipRad: 0.16,
+    driftFullLockRearSlipRad: 0.12,
     ackermannStrength: 0.72
   },
 
@@ -47,8 +48,8 @@ window.CAR_CONFIG = {
 
   assists: {
     countersteerAssist: 0.32,
-    yawDampingGrip: 0.88,
-    yawDampingDrift: 0.965,
+    yawDampingGrip: 0.9975,
+    yawDampingDrift: 0.9992,
     transitionAssist: 0.18,
     driftAngleLimitDeg: 68
   },

@@ -9,6 +9,7 @@ const stateText=document.getElementById('state');
 const frontSlipText=document.getElementById('frontSlip');
 const controlStateText=document.getElementById('controlState');
 const rearSlipText=document.getElementById('rearSlip');
+const steerHudText=document.getElementById('steerHud');
 const rotate=document.getElementById('rotateScreen');
 
 let W=0,H=0,D=1,last=performance.now(),raf=0;
@@ -177,14 +178,16 @@ function getFrontWheelSteerAngle(tire){
 
 function updateSteering(dt,forwardSpeed,rearSlipEstimate){
   const targetInput=(input.right?1:0)-(input.left?1:0);
-  const maxBase=CFG.steering.maxAngleDeg*Math.PI/180;
 
-  // During normal grip driving, reduce effective lock progressively with speed.
-  // When the rear is already sliding, restore full lock for countersteering.
-  let reduction=0;
-  const driftingRear=rearSlipEstimate>=CFG.steering.driftFullLockRearSlipRad;
+  const fullDriftLock=CFG.steering.maxAngleDeg*Math.PI/180;
+  const gripLock=CFG.steering.gripMaxAngleDeg*Math.PI/180;
+  const rearIsSliding=rearSlipEstimate>=CFG.steering.driftFullLockRearSlipRad;
 
-  if(!driftingRear && forwardSpeed>CFG.steering.speedReductionStartMps){
+  // Normal driving uses a manageable steering range.
+  // Once the rear slides, full drift lock becomes available for countersteer.
+  let maxAngle=rearIsSliding?fullDriftLock:gripLock;
+
+  if(!rearIsSliding && forwardSpeed>CFG.steering.speedReductionStartMps){
     const range=Math.max(
       0.1,
       CFG.steering.speedReductionFullMps-CFG.steering.speedReductionStartMps
@@ -194,12 +197,10 @@ function updateSteering(dt,forwardSpeed,rearSlipEstimate){
       0,
       1
     );
-    reduction=CFG.steering.speedReductionAmount*t;
+    maxAngle*=1-CFG.steering.speedReductionAmount*t;
   }
 
-  const maxAngle=maxBase*(1-reduction);
   const target=targetInput*maxAngle;
-
   const movingTowardCenter=Math.abs(target)<Math.abs(car.steerAngle);
   const rate=(movingTowardCenter
     ? CFG.steering.returnSpeedDegPerSec
@@ -298,9 +299,11 @@ function update(dt){
     const tireWorldY=car.y+ry*26;
     const tireSlip=Math.abs(slipAngle);
     const wheelSpinning=tire.drive&&input.gas&&Math.abs(longSpeed)>4;
-    const sliding=tireSlip>0.16&&Math.abs(longSpeed)>3.5;
+    const rearSliding=tire.drive&&tireSlip>0.13&&Math.abs(longSpeed)>3.5;
+    const frontSevereScrub=tire.steer&&tireSlip>0.48&&Math.abs(longSpeed)>9;
+    const leavingMark=rearSliding||frontSevereScrub;
 
-    if(sliding){
+    if(leavingMark){
       skids.push({
         x1:tireWorldX-right.x*3,
         y1:tireWorldY-right.y*3,
@@ -309,7 +312,10 @@ function update(dt){
         life:11
       });
 
-      const smokeRate=(wheelSpinning?48:20)*tireSlip;
+      const smokeRate=tire.drive
+        ? (wheelSpinning?58:24)*tireSlip
+        : 5*tireSlip;
+
       if(Math.random()<dt*smokeRate){
         smoke.push({
           x:tireWorldX+(Math.random()-.5)*5,
@@ -382,6 +388,7 @@ function update(dt){
   stateText.textContent=drifting?'DRIFT':'GRIP';
   frontSlipText.textContent='F '+Math.round(averageFrontSlip*180/Math.PI)+'°';
   rearSlipText.textContent='R '+Math.round(averageRearSlip*180/Math.PI)+'°';
+  steerHudText.textContent='S '+Math.round(Math.abs(car.steerAngle)*180/Math.PI)+'°';
   controlStateText.textContent=input.hand?'E-BRAKE':input.brake?'BRAKE':input.gas?'GAS':'COAST';
 }
 
