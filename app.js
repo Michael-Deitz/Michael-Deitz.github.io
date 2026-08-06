@@ -20,14 +20,14 @@ const car={
   maxSpeed:27,
   reverseSpeed:6,
 
-  steeringTorque:4.25,
-  countersteerTorque:5.2,
+  steeringTorque:6.375,
+  countersteerTorque:7.8,
   transitionTorque:3.5,
 
   frontGrip:7.8,
   rearGrip:4.8,
   driftRearGrip:.82,
-  handRearGrip:.10,
+  handRearGrip:.15,
 
   driftLevel:0,
   transfer:0,
