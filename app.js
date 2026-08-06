@@ -224,11 +224,13 @@ function update(dt){
 
   updateSteering(dt,Math.abs(bodyForwardSpeed),previousRearSlip);
 
+  const requestedSteerDirection=(input.right?1:0)-(input.left?1:0);
   const currentSteerDirection=Math.sign(car.steerAngle);
+
   if(
-    currentSteerDirection!==0 &&
+    requestedSteerDirection!==0 &&
     previousSteerDirection!==0 &&
-    currentSteerDirection!==previousSteerDirection &&
+    requestedSteerDirection!==previousSteerDirection &&
     Math.abs(bodyForwardSpeed)>5
   ){
     transitionLoad=Math.min(
@@ -236,8 +238,8 @@ function update(dt){
       transitionLoad+CFG.assists.transitionBuild
     );
   }
-  if(currentSteerDirection!==0){
-    previousSteerDirection=currentSteerDirection;
+  if(requestedSteerDirection!==0){
+    previousSteerDirection=requestedSteerDirection;
   }
   transitionLoad=Math.max(
     0,
@@ -303,6 +305,11 @@ function update(dt){
           1,
           tire.slipMemory+CFG.tires.rearSlipBuildRate*slipDemand*dt
         );
+      }else if(transitionLoad>0.08){
+        tire.slipMemory=Math.max(
+          CFG.tires.transitionRearSlipFloor,
+          tire.slipMemory
+        );
       }else{
         const recovery=input.gas
           ? CFG.tires.rearSlipRecoveryRate*(1-CFG.tires.rearSlipThrottleHold)
@@ -336,6 +343,26 @@ function update(dt){
     }
 
     let lateralForce=clamp(-slipAngle*stiffness,-maxLateral,maxLateral);
+
+    if(tire.steer){
+      const extremeStart=CFG.tires.extremeLockStartDeg*Math.PI/180;
+      const wheelLock=Math.abs(tireSteer);
+
+      if(wheelLock>extremeStart){
+        const fullLock=Math.max(
+          extremeStart+0.01,
+          CFG.steering.maxAngleDeg*Math.PI/180
+        );
+        const t=clamp(
+          (wheelLock-extremeStart)/(fullLock-extremeStart),
+          0,
+          1
+        );
+        const multiplier=
+          1-t*(1-CFG.tires.extremeLockFrontForceMultiplier);
+        lateralForce*=multiplier;
+      }
+    }
 
     if(Math.abs(longSpeed)<2){
       lateralForce*=CFG.tires.lowSpeedAssist;
@@ -394,14 +421,6 @@ function update(dt){
         longitudinalForce*=scale;
         lateralForce*=scale;
       }
-    }
-
-    // Front scrub should not behave like a brake pedal. Only retain a small
-    // amount of drag from extreme front slip.
-    if(tire.steer && Math.abs(slipAngle)>0.35 && !input.brake){
-      longitudinalForce-=Math.sign(longSpeed||1) *
-        Math.abs(lateralForce) *
-        CFG.tires.frontScrubDragMultiplier;
     }
 
     const fx=tireForward.x*longitudinalForce+tireRight.x*lateralForce;
@@ -484,8 +503,10 @@ function update(dt){
   // While accelerating, do not let tire scrub instantly erase momentum.
   if(input.gas && !input.brake && speedBeforeForces>2){
     const speedAfterRestore=Math.hypot(car.vx,car.vy);
-    const throttleFloor=
-      speedBeforeForces*CFG.tires.minimumThrottleSpeedRetention;
+    const retention=transitionLoad>0.08
+      ? CFG.tires.transitionSpeedRetention
+      : CFG.tires.minimumThrottleSpeedRetention;
+    const throttleFloor=speedBeforeForces*retention;
 
     if(speedAfterRestore<throttleFloor && speedAfterRestore>0.001){
       const restore=throttleFloor/speedAfterRestore;
