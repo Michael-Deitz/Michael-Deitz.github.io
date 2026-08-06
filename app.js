@@ -14,15 +14,26 @@ const car={
   x:0,y:0,angle:-Math.PI/2,
   vx:0,vy:0,yawRate:0,
   width:34,length:66,
-  power:18.5,brakePower:15,maxSpeed:26,reverseSpeed:6,
-  steering:4.0,
-  frontGrip:8.0,
-  rearGrip:5.2,
-  driftRearGrip:1.15,
-  handRearGrip:.28,
+
+  power:19.5,
+  brakePower:15,
+  maxSpeed:27,
+  reverseSpeed:6,
+
+  steeringTorque:4.25,
+  countersteerTorque:5.2,
+  transitionTorque:3.5,
+
+  frontGrip:7.8,
+  rearGrip:4.8,
+  driftRearGrip:.82,
+  handRearGrip:.10,
+
   driftLevel:0,
   transfer:0,
-  previousSteer:0
+  previousSteer:0,
+  previousSlipSign:0,
+  transitionTimer:0
 };
 
 function isLandscape(){return innerWidth>innerHeight}
@@ -30,7 +41,9 @@ function isLandscape(){return innerWidth>innerHeight}
 function resetCar(){
   car.x=0;car.y=0;car.angle=-Math.PI/2;
   car.vx=0;car.vy=0;car.yawRate=0;
-  car.driftLevel=0;car.transfer=0;car.previousSteer=0;
+  car.driftLevel=0;car.transfer=0;
+  car.previousSteer=0;car.previousSlipSign=0;
+  car.transitionTimer=0;
   cameraX=car.x;cameraY=car.y;
 }
 
@@ -71,21 +84,22 @@ function drawTrack(){
   const p=screen(0,0);ctx.save();ctx.translate(p.x,p.y);
 
   ctx.fillStyle='#34383d';
-  roundedRect(-1200,-820,2400,1640,90);ctx.fill();
+  roundedRect(-1250,-850,2500,1700,95);ctx.fill();
 
   ctx.strokeStyle='#b2b7bb';ctx.lineWidth=10;
-  roundedRect(-1195,-815,2390,1630,86);ctx.stroke();
+  roundedRect(-1245,-845,2490,1690,90);ctx.stroke();
 
   ctx.fillStyle='#426d40';
-  ctx.beginPath();ctx.ellipse(0,-300,175,120,0,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.ellipse(0,-320,185,128,0,0,Math.PI*2);ctx.fill();
 
   ctx.strokeStyle='#d94b3e';ctx.lineWidth=14;ctx.setLineDash([32,24]);
-  ctx.beginPath();ctx.ellipse(0,-300,194,139,0,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.ellipse(0,-320,205,148,0,0,Math.PI*2);ctx.stroke();
 
   ctx.strokeStyle='#ffffff3b';ctx.lineWidth=4;ctx.setLineDash([25,20]);
-  ctx.beginPath();ctx.ellipse(-430,100,310,210,0,0,Math.PI*2);ctx.stroke();
-  ctx.beginPath();ctx.ellipse(430,100,310,210,0,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.ellipse(-455,110,330,225,0,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.ellipse(455,110,330,225,0,0,Math.PI*2);ctx.stroke();
   ctx.setLineDash([]);
+
   ctx.restore();
 }
 
@@ -102,7 +116,8 @@ function drawEffects(){
 
   for(const puff of smoke){
     const p=screen(puff.x,puff.y);
-    ctx.globalAlpha=Math.max(0,puff.life);ctx.fillStyle='#ddd';
+    ctx.globalAlpha=Math.max(0,puff.life);
+    ctx.fillStyle='#ddd';
     ctx.beginPath();ctx.arc(p.x,p.y,puff.radius,0,Math.PI*2);ctx.fill();
   }
   ctx.globalAlpha=1;
@@ -110,7 +125,9 @@ function drawEffects(){
 
 function drawCar(){
   const p=screen(car.x,car.y);
-  ctx.save();ctx.translate(p.x,p.y);ctx.rotate(car.angle+Math.PI/2);
+  ctx.save();
+  ctx.translate(p.x,p.y);
+  ctx.rotate(car.angle+Math.PI/2);
 
   ctx.fillStyle='rgba(0,0,0,.28)';
   roundedRect(-car.width/2+5,-car.length/2+6,car.width,car.length,7);ctx.fill();
@@ -134,6 +151,7 @@ function speedMagnitude(){return Math.hypot(car.vx,car.vy)}
 
 function update(dt){
   const steer=(input.right?1:0)-(input.left?1:0);
+
   const forward={x:Math.cos(car.angle),y:Math.sin(car.angle)};
   const right={x:Math.cos(car.angle+Math.PI/2),y:Math.sin(car.angle+Math.PI/2)};
 
@@ -141,23 +159,34 @@ function update(dt){
   const lateralSpeed=car.vx*right.x+car.vy*right.y;
   const speed=Math.abs(forwardSpeed);
 
-  // Weight transfer from a quick steering reversal.
-  if(steer!==0 && car.previousSteer!==0 && steer!==car.previousSteer && speed>6.5){
-    car.transfer=Math.min(1,car.transfer+.85);
+  const slipAngle=Math.atan2(lateralSpeed,Math.abs(forwardSpeed)+.01);
+  const slipSign=Math.sign(slipAngle);
+
+  // Steering reversal loads the opposite side and helps start a transition.
+  if(steer!==0 && car.previousSteer!==0 && steer!==car.previousSteer && speed>6){
+    car.transfer=Math.min(1,car.transfer+.95);
+    if(car.driftLevel>.25){
+      car.transitionTimer=.48;
+      car.yawRate+=steer*car.transitionTorque;
+    }
   }
   if(steer!==0)car.previousSteer=steer;
-  car.transfer=Math.max(0,car.transfer-dt*.72);
 
-  // Lift-off oversteer.
+  car.transfer=Math.max(0,car.transfer-dt*.65);
+  car.transitionTimer=Math.max(0,car.transitionTimer-dt);
+
+  // Lift-off weight transfer.
   if(!input.gas && speed>8 && Math.abs(steer)>.1){
-    car.transfer=Math.min(1,car.transfer+dt*1.35);
+    car.transfer=Math.min(1,car.transfer+dt*1.45);
   }
 
+  // Engine pushes only along the vehicle's forward direction.
   if(input.gas && forwardSpeed<car.maxSpeed){
     car.vx+=forward.x*car.power*dt;
     car.vy+=forward.y*car.power*dt;
   }
 
+  // Foot brake affects the whole vehicle.
   if(input.brake){
     if(forwardSpeed>1){
       const m=speedMagnitude()||1;
@@ -169,82 +198,95 @@ function update(dt){
     }
   }
 
-  // Drift initiation and maintenance.
-  const naturalSlip=Math.min(1,Math.abs(lateralSpeed)/5.5);
-  const initiation=Math.max(
-    input.hand?1:0,
-    car.transfer,
-    input.gas&&speed>7&&Math.abs(steer)>.35 ? .65 : 0,
-    naturalSlip
-  );
+  // Handbrake does NOT apply longitudinal braking.
+  // It only removes rear lateral grip and adds a small yaw impulse.
+  if(input.hand && speed>3){
+    car.driftLevel=Math.min(1,car.driftLevel+dt*5.5);
+    car.yawRate+=steer*1.8*dt;
+  }
 
-  if(initiation>.38){
-    car.driftLevel=Math.min(1,car.driftLevel+dt*(input.hand?4.5:2.2)*initiation);
+  const naturalSlip=Math.min(1,Math.abs(lateralSpeed)/4.8);
+  const powerOversteer=input.gas&&speed>7&&Math.abs(steer)>.18 ? .62 : 0;
+  const initiation=Math.max(car.transfer,naturalSlip,powerOversteer,input.hand?1:0);
+
+  if(initiation>.28){
+    car.driftLevel=Math.min(1,car.driftLevel+dt*(input.hand?4.5:2.65)*initiation);
   }else{
-    const recovery=input.gas&&Math.abs(lateralSpeed)>1.5 ? .28 : .72;
+    const holdingWithThrottle=input.gas&&Math.abs(slipAngle)>.14;
+    const recovery=holdingWithThrottle?.18:.58;
     car.driftLevel=Math.max(0,car.driftLevel-dt*recovery);
   }
 
-  // Steering creates rotation, but countersteer can catch it.
-  const steeringAuthority=Math.min(1,speed/5);
-  car.yawRate+=steer*car.steering*steeringAuthority*dt;
+  // Base steering torque.
+  const steeringAuthority=Math.min(1,speed/4.5);
+  car.yawRate+=steer*car.steeringTorque*steeringAuthority*dt;
 
   if(car.driftLevel>.15){
-    // Rear wheels push the car around while throttle is applied.
-    car.yawRate+=steer*car.driftLevel*(input.gas?1.8:.75)*dt;
+    // Throttle adds rear rotation instead of only pushing the car sideways.
+    if(input.gas){
+      car.yawRate+=Math.sign(steer||slipSign||1)*car.driftLevel*1.35*dt;
+    }
 
-    // Countersteering against the direction of lateral travel stabilizes the slide.
-    const lateralDirection=Math.sign(lateralSpeed);
-    if(steer!==0 && steer===-lateralDirection){
-      car.yawRate*=Math.pow(.965,dt*60);
+    // Countersteer can create and hold larger angle.
+    const countersteering=steer!==0&&steer===-slipSign;
+    if(countersteering){
+      car.yawRate+=steer*car.countersteerTorque*car.driftLevel*dt;
+    }
+
+    // During transition, let yaw carry through center rather than damping early.
+    if(car.transitionTimer>0){
+      car.yawRate+=steer*car.transitionTorque*dt;
     }
   }
 
-  car.yawRate*=Math.pow(car.driftLevel>.15?.991:.975,dt*60);
+  // Preserve more rotational inertia while drifting.
+  const yawDamping=car.driftLevel>.15 ? .996 : .972;
+  car.yawRate*=Math.pow(yawDamping,dt*60);
   car.angle+=car.yawRate*dt;
 
   const rearGrip=input.hand
     ? car.handRearGrip
     : car.rearGrip+(car.driftRearGrip-car.rearGrip)*car.driftLevel;
 
-  // Front and rear contribution are separated.
-  const frontCorrection=lateralSpeed*car.frontGrip*.40;
-  const rearCorrection=lateralSpeed*rearGrip*.60;
+  // Front stays responsive while rear remains loose.
+  const frontCorrection=lateralSpeed*car.frontGrip*.34;
+  const rearCorrection=lateralSpeed*rearGrip*.66;
   const lateralCorrection=frontCorrection+rearCorrection;
 
   car.vx-=right.x*lateralCorrection*dt;
   car.vy-=right.y*lateralCorrection*dt;
 
-  car.vx*=Math.pow(.995,dt*60);
-  car.vy*=Math.pow(.995,dt*60);
+  // Slightly less rolling drag preserves speed through a drift.
+  car.vx*=Math.pow(.997,dt*60);
+  car.vy*=Math.pow(.997,dt*60);
 
   car.x+=car.vx*60*dt;
   car.y+=car.vy*60*dt;
 
-  if(Math.abs(car.x)>1140){car.x=Math.sign(car.x)*1140;car.vx*=-.2}
-  if(Math.abs(car.y)>760){car.y=Math.sign(car.y)*760;car.vy*=-.2}
+  if(Math.abs(car.x)>1190){car.x=Math.sign(car.x)*1190;car.vx*=-.2}
+  if(Math.abs(car.y)>800){car.y=Math.sign(car.y)*800;car.vy*=-.2}
 
   cameraX+=(car.x-cameraX)*Math.min(1,dt*4.2);
   cameraY+=(car.y-cameraY)*Math.min(1,dt*4.2);
 
-  const slip=Math.atan2(lateralSpeed,Math.abs(forwardSpeed)+.01);
-  const drifting=car.driftLevel>.18&&Math.abs(slip)>.13&&speedMagnitude()>4.5;
+  const drifting=car.driftLevel>.16&&Math.abs(slipAngle)>.12&&speedMagnitude()>4.5;
 
   if(drifting){
     const rearX=car.x-Math.cos(car.angle)*car.length*.38;
     const rearY=car.y-Math.sin(car.angle)*car.length*.38;
 
-    if(Math.random()<dt*(28+42*car.driftLevel)){
+    if(Math.random()<dt*(30+55*car.driftLevel)){
       smoke.push({
         x:rearX+(Math.random()-.5)*16,
         y:rearY+(Math.random()-.5)*16,
         radius:6+Math.random()*8,
-        life:.9
+        life:.95
       });
     }
 
     const sideX=Math.cos(car.angle+Math.PI/2)*17;
     const sideY=Math.sin(car.angle+Math.PI/2)*17;
+
     skids.push({
       x1:rearX-sideX,y1:rearY-sideY,
       x2:rearX+sideX,y2:rearY+sideY,
@@ -254,12 +296,15 @@ function update(dt){
 
   smoke.forEach(p=>{p.life-=dt;p.radius+=dt*8});
   smoke=smoke.filter(p=>p.life>0);
+
   skids.forEach(mark=>mark.life-=dt);
   skids=skids.filter(mark=>mark.life>0);
 
   speedText.textContent=Math.round(speedMagnitude()*4.1)+' MPH';
-  angleText.textContent=Math.round(Math.abs(slip*180/Math.PI))+'°';
-  stateText.textContent=car.driftLevel>.18?'DRIFT':'GRIP';
+  angleText.textContent=Math.round(Math.abs(slipAngle*180/Math.PI))+'°';
+  stateText.textContent=car.transitionTimer>0?'TRANSITION':car.driftLevel>.16?'DRIFT':'GRIP';
+
+  if(slipSign!==0)car.previousSlipSign=slipSign;
 }
 
 function draw(){drawTrack();drawEffects();drawCar()}
@@ -267,13 +312,19 @@ function draw(){drawTrack();drawEffects();drawCar()}
 function loop(time){
   raf=0;
   if(!isLandscape())return;
+
   const dt=Math.min((time-last)/1000,.033);
   last=time;
-  update(dt);draw();
+
+  update(dt);
+  draw();
+
   raf=requestAnimationFrame(loop);
 }
 
-function startLoop(){if(!raf)raf=requestAnimationFrame(loop)}
+function startLoop(){
+  if(!raf)raf=requestAnimationFrame(loop);
+}
 
 function bind(id,key){
   const button=document.getElementById(id);
@@ -282,7 +333,7 @@ function bind(id,key){
     e.preventDefault();
     e.stopPropagation();
     input[key]=true;
-    if(button.setPointerCapture && e.pointerId!==undefined){
+    if(button.setPointerCapture&&e.pointerId!==undefined){
       try{button.setPointerCapture(e.pointerId)}catch(_){}
     }
   };
@@ -291,7 +342,7 @@ function bind(id,key){
     e.preventDefault();
     e.stopPropagation();
     input[key]=false;
-    if(button.releasePointerCapture && e.pointerId!==undefined){
+    if(button.releasePointerCapture&&e.pointerId!==undefined){
       try{button.releasePointerCapture(e.pointerId)}catch(_){}
     }
   };
@@ -309,7 +360,11 @@ bind('brake','brake');
 bind('hand','hand');
 
 document.getElementById('resetBtn').addEventListener('pointerdown',e=>{
-  e.preventDefault();resetCar();smoke=[];skids=[];draw();
+  e.preventDefault();
+  resetCar();
+  smoke=[];
+  skids=[];
+  draw();
 },{passive:false});
 
 resetCar();
