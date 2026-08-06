@@ -1,107 +1,318 @@
 (()=>{'use strict';
-const c=document.getElementById('game'),x=c.getContext('2d');
-const sp=document.getElementById('speed'),an=document.getElementById('angle'),gr=document.getElementById('grip');
-const rotate=document.getElementById('rotateScreen');
-let W=0,H=0,D=1,last=performance.now(),cx=0,cy=0,raf=0;
-const input={l:0,r:0,g:0,b:0,h:0};
-const car={x:0,y:0,a:-Math.PI/2,vx:0,vy:0,yaw:0,w:34,l:66,eng:17.5,br:15,max:25,rev:6,steer:4.2,front:8.8,rearBase:4,rear:4,rearMin:.55,recover:1.15,drop:3.2,transfer:0,prev:0};
 
-function landscape(){return innerWidth>innerHeight}
+const canvas=document.getElementById('game');
+const ctx=canvas.getContext('2d');
+const speedText=document.getElementById('speed');
+const angleText=document.getElementById('angle');
+const stateText=document.getElementById('state');
+const rotate=document.getElementById('rotateScreen');
+
+let W=0,H=0,D=1,last=performance.now(),cameraX=0,cameraY=0,raf=0;
+const input={left:false,right:false,gas:false,brake:false,hand:false};
+
+const car={
+  x:0,y:0,angle:-Math.PI/2,
+  vx:0,vy:0,yawRate:0,
+  width:34,length:66,
+  power:18.5,brakePower:15,maxSpeed:26,reverseSpeed:6,
+  steering:4.0,
+  frontGrip:8.0,
+  rearGrip:5.2,
+  driftRearGrip:1.15,
+  handRearGrip:.28,
+  driftLevel:0,
+  transfer:0,
+  previousSteer:0
+};
+
+function isLandscape(){return innerWidth>innerHeight}
+
 function resetCar(){
-  car.x=0;car.y=0;car.a=-Math.PI/2;car.vx=0;car.vy=0;car.yaw=0;
-  car.rear=car.rearBase;car.transfer=0;car.prev=0;
-  cx=car.x;cy=car.y;
+  car.x=0;car.y=0;car.angle=-Math.PI/2;
+  car.vx=0;car.vy=0;car.yawRate=0;
+  car.driftLevel=0;car.transfer=0;car.previousSteer=0;
+  cameraX=car.x;cameraY=car.y;
 }
+
 function syncOrientation(){
-  const land=landscape();
-  document.body.classList.toggle('portrait',!land);
-  rotate.classList.toggle('hidden',land);
-  if(land){last=performance.now();startLoop()}
+  const landscape=isLandscape();
+  document.body.classList.toggle('portrait',!landscape);
+  rotate.classList.toggle('hidden',landscape);
+  if(landscape){last=performance.now();startLoop()}
 }
+
 function resize(){
   D=Math.min(devicePixelRatio||1,2);
   W=innerWidth;H=innerHeight;
-  c.width=Math.floor(W*D);c.height=Math.floor(H*D);
-  c.style.width=W+'px';c.style.height=H+'px';
-  x.setTransform(D,0,0,D,0,0);
-  syncOrientation();
-  draw();
+  canvas.width=Math.floor(W*D);canvas.height=Math.floor(H*D);
+  canvas.style.width=W+'px';canvas.style.height=H+'px';
+  ctx.setTransform(D,0,0,D,0,0);
+  syncOrientation();draw();
 }
+
 addEventListener('resize',resize);
 addEventListener('orientationchange',()=>{setTimeout(resize,100);setTimeout(resize,450)});
+document.addEventListener('contextmenu',e=>e.preventDefault(),{passive:false});
+document.addEventListener('selectstart',e=>e.preventDefault(),{passive:false});
+document.addEventListener('gesturestart',e=>e.preventDefault(),{passive:false});
 
-function s(px,py){return{x:px-cx+W/2,y:py-cy+H/2}}
-function rr(px,py,w,h,r){x.beginPath();x.moveTo(px+r,py);x.lineTo(px+w-r,py);x.quadraticCurveTo(px+w,py,px+w,py+r);x.lineTo(px+w,py+h-r);x.quadraticCurveTo(px+w,py+h,px+w-r,py+h);x.lineTo(px+r,py+h);x.quadraticCurveTo(px,py+h,px,py+h-r);x.lineTo(px,py+r);x.quadraticCurveTo(px,py,px+r,py);x.closePath()}
-function track(){
-  x.fillStyle='#456d3f';x.fillRect(0,0,W,H);
-  const p=s(0,0);x.save();x.translate(p.x,p.y);
-  x.fillStyle='#34383d';rr(-1050,-720,2100,1440,80);x.fill();
-  x.strokeStyle='#b2b7bb';x.lineWidth=10;rr(-1045,-715,2090,1430,76);x.stroke();
-  x.fillStyle='#426d40';x.beginPath();x.ellipse(0,-250,160,112,0,0,Math.PI*2);x.fill();
-  x.strokeStyle='#d94b3e';x.lineWidth=14;x.setLineDash([32,24]);x.beginPath();x.ellipse(0,-250,178,130,0,0,Math.PI*2);x.stroke();
-  x.strokeStyle='#ffffff3b';x.lineWidth=4;x.setLineDash([25,20]);x.beginPath();x.ellipse(-390,80,285,190,0,0,Math.PI*2);x.stroke();x.beginPath();x.ellipse(390,80,285,190,0,0,Math.PI*2);x.stroke();x.setLineDash([]);
-  x.restore();
+function screen(x,y){return{x:x-cameraX+W/2,y:y-cameraY+H/2}}
+
+function roundedRect(x,y,w,h,r){
+  ctx.beginPath();ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);
+  ctx.quadraticCurveTo(x+w,y,x+w,y+r);ctx.lineTo(x+w,y+h-r);
+  ctx.quadraticCurveTo(x+w,y+h,x+w-r,y+h);ctx.lineTo(x+r,y+h);
+  ctx.quadraticCurveTo(x,y+h,x,y+h-r);ctx.lineTo(x,y+r);
+  ctx.quadraticCurveTo(x,y,x+r,y);ctx.closePath();
 }
+
+function drawTrack(){
+  ctx.fillStyle='#456d3f';ctx.fillRect(0,0,W,H);
+  const p=screen(0,0);ctx.save();ctx.translate(p.x,p.y);
+
+  ctx.fillStyle='#34383d';
+  roundedRect(-1200,-820,2400,1640,90);ctx.fill();
+
+  ctx.strokeStyle='#b2b7bb';ctx.lineWidth=10;
+  roundedRect(-1195,-815,2390,1630,86);ctx.stroke();
+
+  ctx.fillStyle='#426d40';
+  ctx.beginPath();ctx.ellipse(0,-300,175,120,0,0,Math.PI*2);ctx.fill();
+
+  ctx.strokeStyle='#d94b3e';ctx.lineWidth=14;ctx.setLineDash([32,24]);
+  ctx.beginPath();ctx.ellipse(0,-300,194,139,0,0,Math.PI*2);ctx.stroke();
+
+  ctx.strokeStyle='#ffffff3b';ctx.lineWidth=4;ctx.setLineDash([25,20]);
+  ctx.beginPath();ctx.ellipse(-430,100,310,210,0,0,Math.PI*2);ctx.stroke();
+  ctx.beginPath();ctx.ellipse(430,100,310,210,0,0,Math.PI*2);ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
+}
+
 let smoke=[],skids=[];
-function effects(){
-  x.strokeStyle='#111a';x.lineWidth=3;
-  for(const q of skids){const a=s(q.x1,q.y1),b=s(q.x2,q.y2);x.globalAlpha=Math.min(1,q.life/2);x.beginPath();x.moveTo(a.x,a.y);x.lineTo(b.x,b.y);x.stroke()}
-  x.globalAlpha=1;
-  for(const q of smoke){const a=s(q.x,q.y);x.globalAlpha=Math.max(0,q.life);x.fillStyle='#ddd';x.beginPath();x.arc(a.x,a.y,q.r,0,Math.PI*2);x.fill()}
-  x.globalAlpha=1;
+
+function drawEffects(){
+  ctx.strokeStyle='#111a';ctx.lineWidth=3;
+  for(const mark of skids){
+    const a=screen(mark.x1,mark.y1),b=screen(mark.x2,mark.y2);
+    ctx.globalAlpha=Math.min(1,mark.life/2);
+    ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();
+  }
+  ctx.globalAlpha=1;
+
+  for(const puff of smoke){
+    const p=screen(puff.x,puff.y);
+    ctx.globalAlpha=Math.max(0,puff.life);ctx.fillStyle='#ddd';
+    ctx.beginPath();ctx.arc(p.x,p.y,puff.radius,0,Math.PI*2);ctx.fill();
+  }
+  ctx.globalAlpha=1;
 }
-function carDraw(){
-  const p=s(car.x,car.y);x.save();x.translate(p.x,p.y);x.rotate(car.a+Math.PI/2);
-  x.fillStyle='rgba(0,0,0,.28)';rr(-car.w/2+5,-car.l/2+6,car.w,car.l,7);x.fill();
-  x.fillStyle='#a92331';rr(-car.w/2,-car.l/2,car.w,car.l,7);x.fill();
-  x.fillStyle='#101820';rr(-car.w*.34,-car.l*.17,car.w*.68,car.l*.3,4);x.fill();
-  x.fillStyle='#151515';x.fillRect(-car.w*.62,-car.l*.3,7,18);x.fillRect(car.w*.42,-car.l*.3,7,18);x.fillRect(-car.w*.62,car.l*.12,7,18);x.fillRect(car.w*.42,car.l*.12,7,18);
-  x.restore();
+
+function drawCar(){
+  const p=screen(car.x,car.y);
+  ctx.save();ctx.translate(p.x,p.y);ctx.rotate(car.angle+Math.PI/2);
+
+  ctx.fillStyle='rgba(0,0,0,.28)';
+  roundedRect(-car.width/2+5,-car.length/2+6,car.width,car.length,7);ctx.fill();
+
+  ctx.fillStyle='#a92331';
+  roundedRect(-car.width/2,-car.length/2,car.width,car.length,7);ctx.fill();
+
+  ctx.fillStyle='#101820';
+  roundedRect(-car.width*.34,-car.length*.17,car.width*.68,car.length*.3,4);ctx.fill();
+
+  ctx.fillStyle='#151515';
+  ctx.fillRect(-car.width*.62,-car.length*.3,7,18);
+  ctx.fillRect(car.width*.42,-car.length*.3,7,18);
+  ctx.fillRect(-car.width*.62,car.length*.12,7,18);
+  ctx.fillRect(car.width*.42,car.length*.12,7,18);
+
+  ctx.restore();
 }
-const mag=()=>Math.hypot(car.vx,car.vy);
+
+function speedMagnitude(){return Math.hypot(car.vx,car.vy)}
 
 function update(dt){
-  const steer=(input.r?1:0)-(input.l?1:0);
-  const f={x:Math.cos(car.a),y:Math.sin(car.a)},r={x:Math.cos(car.a+Math.PI/2),y:Math.sin(car.a+Math.PI/2)};
-  const fs=car.vx*f.x+car.vy*f.y,ls=car.vx*r.x+car.vy*r.y,speed=Math.abs(fs);
-  if(steer&&car.prev&&steer!==car.prev&&speed>7)car.transfer=Math.min(1,car.transfer+.95);
-  if(steer)car.prev=steer;
-  car.transfer=Math.max(0,car.transfer-dt*.75);
-  if(!input.g&&speed>9&&Math.abs(steer)>.1)car.transfer=Math.min(1,car.transfer+dt*1.6);
-  if(input.g&&fs<car.max){car.vx+=f.x*car.eng*dt;car.vy+=f.y*car.eng*dt}
-  if(input.b){if(fs>1){const m=mag()||1;car.vx-=car.vx/m*car.br*dt;car.vy-=car.vy/m*car.br*dt}else if(fs>-car.rev){car.vx-=f.x*car.eng*.55*dt;car.vy-=f.y*car.eng*.55*dt}}
-  const demand=Math.min(1,Math.abs(ls)/5.5+Math.abs(car.yaw)*.16+car.transfer*.85+(input.g&&speed>8?Math.abs(steer)*.3:0));
-  if(input.h)car.rear=Math.max(car.rearMin,car.rear-car.drop*2.7*dt);
-  else if(demand>.35)car.rear=Math.max(car.rearMin,car.rear-car.drop*demand*dt);
-  else car.rear=Math.min(car.rearBase,car.rear+car.recover*dt);
-  const sf=Math.min(1,speed/5);
-  car.yaw+=steer*car.steer*sf*(fs>=0?1:-1)*dt;
-  car.yaw+=steer*car.transfer*2.2*dt;
-  if(input.g&&car.rear<2.3&&speed>7)car.yaw+=steer*1.25*dt;
-  car.yaw*=Math.pow(.985,dt*60);car.a+=car.yaw*dt;
-  const correction=ls*(car.front*.45+car.rear*.55);
-  car.vx-=r.x*correction*dt;car.vy-=r.y*correction*dt;
-  car.vx*=Math.pow(.995,dt*60);car.vy*=Math.pow(.995,dt*60);
-  car.x+=car.vx*60*dt;car.y+=car.vy*60*dt;
-  if(Math.abs(car.x)>1000){car.x=Math.sign(car.x)*1000;car.vx*=-.2}
-  if(Math.abs(car.y)>670){car.y=Math.sign(car.y)*670;car.vy*=-.2}
-  cx+=(car.x-cx)*Math.min(1,dt*4.2);cy+=(car.y-cy)*Math.min(1,dt*4.2);
-  const slip=Math.atan2(ls,Math.abs(fs)+.01),drifting=Math.abs(slip)>.18&&mag()>5;
-  if(drifting){const bx=car.x-Math.cos(car.a)*car.l*.38,by=car.y-Math.sin(car.a)*car.l*.38;if(Math.random()<dt*45)smoke.push({x:bx,y:by,r:6+Math.random()*7,life:.9});const sx=Math.cos(car.a+Math.PI/2)*17,sy=Math.sin(car.a+Math.PI/2)*17;skids.push({x1:bx-sx,y1:by-sy,x2:bx+sx,y2:by+sy,life:13})}
-  smoke.forEach(q=>{q.life-=dt;q.r+=dt*8});smoke=smoke.filter(q=>q.life>0);skids.forEach(q=>q.life-=dt);skids=skids.filter(q=>q.life>0);
-  sp.textContent=Math.round(mag()*4.1)+' MPH';an.textContent=Math.round(Math.abs(slip*180/Math.PI))+'°';gr.textContent=Math.round(car.rear/car.rearBase*100)+'%';
+  const steer=(input.right?1:0)-(input.left?1:0);
+  const forward={x:Math.cos(car.angle),y:Math.sin(car.angle)};
+  const right={x:Math.cos(car.angle+Math.PI/2),y:Math.sin(car.angle+Math.PI/2)};
+
+  const forwardSpeed=car.vx*forward.x+car.vy*forward.y;
+  const lateralSpeed=car.vx*right.x+car.vy*right.y;
+  const speed=Math.abs(forwardSpeed);
+
+  // Weight transfer from a quick steering reversal.
+  if(steer!==0 && car.previousSteer!==0 && steer!==car.previousSteer && speed>6.5){
+    car.transfer=Math.min(1,car.transfer+.85);
+  }
+  if(steer!==0)car.previousSteer=steer;
+  car.transfer=Math.max(0,car.transfer-dt*.72);
+
+  // Lift-off oversteer.
+  if(!input.gas && speed>8 && Math.abs(steer)>.1){
+    car.transfer=Math.min(1,car.transfer+dt*1.35);
+  }
+
+  if(input.gas && forwardSpeed<car.maxSpeed){
+    car.vx+=forward.x*car.power*dt;
+    car.vy+=forward.y*car.power*dt;
+  }
+
+  if(input.brake){
+    if(forwardSpeed>1){
+      const m=speedMagnitude()||1;
+      car.vx-=car.vx/m*car.brakePower*dt;
+      car.vy-=car.vy/m*car.brakePower*dt;
+    }else if(forwardSpeed>-car.reverseSpeed){
+      car.vx-=forward.x*car.power*.5*dt;
+      car.vy-=forward.y*car.power*.5*dt;
+    }
+  }
+
+  // Drift initiation and maintenance.
+  const naturalSlip=Math.min(1,Math.abs(lateralSpeed)/5.5);
+  const initiation=Math.max(
+    input.hand?1:0,
+    car.transfer,
+    input.gas&&speed>7&&Math.abs(steer)>.35 ? .65 : 0,
+    naturalSlip
+  );
+
+  if(initiation>.38){
+    car.driftLevel=Math.min(1,car.driftLevel+dt*(input.hand?4.5:2.2)*initiation);
+  }else{
+    const recovery=input.gas&&Math.abs(lateralSpeed)>1.5 ? .28 : .72;
+    car.driftLevel=Math.max(0,car.driftLevel-dt*recovery);
+  }
+
+  // Steering creates rotation, but countersteer can catch it.
+  const steeringAuthority=Math.min(1,speed/5);
+  car.yawRate+=steer*car.steering*steeringAuthority*dt;
+
+  if(car.driftLevel>.15){
+    // Rear wheels push the car around while throttle is applied.
+    car.yawRate+=steer*car.driftLevel*(input.gas?1.8:.75)*dt;
+
+    // Countersteering against the direction of lateral travel stabilizes the slide.
+    const lateralDirection=Math.sign(lateralSpeed);
+    if(steer!==0 && steer===-lateralDirection){
+      car.yawRate*=Math.pow(.965,dt*60);
+    }
+  }
+
+  car.yawRate*=Math.pow(car.driftLevel>.15?.991:.975,dt*60);
+  car.angle+=car.yawRate*dt;
+
+  const rearGrip=input.hand
+    ? car.handRearGrip
+    : car.rearGrip+(car.driftRearGrip-car.rearGrip)*car.driftLevel;
+
+  // Front and rear contribution are separated.
+  const frontCorrection=lateralSpeed*car.frontGrip*.40;
+  const rearCorrection=lateralSpeed*rearGrip*.60;
+  const lateralCorrection=frontCorrection+rearCorrection;
+
+  car.vx-=right.x*lateralCorrection*dt;
+  car.vy-=right.y*lateralCorrection*dt;
+
+  car.vx*=Math.pow(.995,dt*60);
+  car.vy*=Math.pow(.995,dt*60);
+
+  car.x+=car.vx*60*dt;
+  car.y+=car.vy*60*dt;
+
+  if(Math.abs(car.x)>1140){car.x=Math.sign(car.x)*1140;car.vx*=-.2}
+  if(Math.abs(car.y)>760){car.y=Math.sign(car.y)*760;car.vy*=-.2}
+
+  cameraX+=(car.x-cameraX)*Math.min(1,dt*4.2);
+  cameraY+=(car.y-cameraY)*Math.min(1,dt*4.2);
+
+  const slip=Math.atan2(lateralSpeed,Math.abs(forwardSpeed)+.01);
+  const drifting=car.driftLevel>.18&&Math.abs(slip)>.13&&speedMagnitude()>4.5;
+
+  if(drifting){
+    const rearX=car.x-Math.cos(car.angle)*car.length*.38;
+    const rearY=car.y-Math.sin(car.angle)*car.length*.38;
+
+    if(Math.random()<dt*(28+42*car.driftLevel)){
+      smoke.push({
+        x:rearX+(Math.random()-.5)*16,
+        y:rearY+(Math.random()-.5)*16,
+        radius:6+Math.random()*8,
+        life:.9
+      });
+    }
+
+    const sideX=Math.cos(car.angle+Math.PI/2)*17;
+    const sideY=Math.sin(car.angle+Math.PI/2)*17;
+    skids.push({
+      x1:rearX-sideX,y1:rearY-sideY,
+      x2:rearX+sideX,y2:rearY+sideY,
+      life:13
+    });
+  }
+
+  smoke.forEach(p=>{p.life-=dt;p.radius+=dt*8});
+  smoke=smoke.filter(p=>p.life>0);
+  skids.forEach(mark=>mark.life-=dt);
+  skids=skids.filter(mark=>mark.life>0);
+
+  speedText.textContent=Math.round(speedMagnitude()*4.1)+' MPH';
+  angleText.textContent=Math.round(Math.abs(slip*180/Math.PI))+'°';
+  stateText.textContent=car.driftLevel>.18?'DRIFT':'GRIP';
 }
-function draw(){track();effects();carDraw()}
-function loop(t){
+
+function draw(){drawTrack();drawEffects();drawCar()}
+
+function loop(time){
   raf=0;
-  if(!landscape())return;
-  const dt=Math.min((t-last)/1000,.033);last=t;
+  if(!isLandscape())return;
+  const dt=Math.min((time-last)/1000,.033);
+  last=time;
   update(dt);draw();
   raf=requestAnimationFrame(loop);
 }
+
 function startLoop(){if(!raf)raf=requestAnimationFrame(loop)}
-function bind(id,k){const b=document.getElementById(id),on=e=>{e.preventDefault();input[k]=1},off=e=>{e.preventDefault();input[k]=0};b.addEventListener('pointerdown',on);b.addEventListener('pointerup',off);b.addEventListener('pointercancel',off);b.addEventListener('pointerleave',off)}
-bind('left','l');bind('right','r');bind('gas','g');bind('brake','b');bind('hand','h');
-document.getElementById('resetBtn').onclick=()=>{resetCar();smoke=[];skids=[];draw()};
-resetCar();resize();startLoop();
+
+function bind(id,key){
+  const button=document.getElementById(id);
+
+  const down=e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    input[key]=true;
+    if(button.setPointerCapture && e.pointerId!==undefined){
+      try{button.setPointerCapture(e.pointerId)}catch(_){}
+    }
+  };
+
+  const up=e=>{
+    e.preventDefault();
+    e.stopPropagation();
+    input[key]=false;
+    if(button.releasePointerCapture && e.pointerId!==undefined){
+      try{button.releasePointerCapture(e.pointerId)}catch(_){}
+    }
+  };
+
+  button.addEventListener('pointerdown',down,{passive:false});
+  button.addEventListener('pointerup',up,{passive:false});
+  button.addEventListener('pointercancel',up,{passive:false});
+  button.addEventListener('lostpointercapture',up,{passive:false});
+}
+
+bind('left','left');
+bind('right','right');
+bind('gas','gas');
+bind('brake','brake');
+bind('hand','hand');
+
+document.getElementById('resetBtn').addEventListener('pointerdown',e=>{
+  e.preventDefault();resetCar();smoke=[];skids=[];draw();
+},{passive:false});
+
+resetCar();
+resize();
+startLoop();
 })();
