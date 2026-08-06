@@ -12,14 +12,13 @@ window.CAR_CONFIG = {
   },
 
   steering: {
-    maxAngleDeg: 60,
+    driftMaxAngleDeg: 60,
     gripMaxAngleDeg: 28,
     inputSpeedDegPerSec: 150,
     returnSpeedDegPerSec: 210,
     speedReductionStartMps: 4,
     speedReductionFullMps: 18,
     speedReductionAmount: 0.66,
-    driftFullLockRearSlipRad: 0.12,
     ackermannStrength: 0.72
   },
 
@@ -41,39 +40,56 @@ window.CAR_CONFIG = {
     rearCorneringStiffness: 6800,
     frontMaxLateralForce: 16500,
     rearMaxLateralForce: 7000,
-    rearDriveSlipStart: 0.55,
-    rearDriveGripMultiplier: 0.48,
     frontCombinedGrip: 1.00,
     rearCombinedGrip: 0.88,
-    powerOversteerStartMps: 6.5,
-    powerOversteerSteerRad: 0.16,
-    powerOversteerRearGripMultiplier: 0.52,
-    frontScrubDragMultiplier: 0.0,
-    extremeLockStartDeg: 34,
-    extremeLockFrontForceMultiplier: 0.58,
-    transitionSpeedRetention: 0.9985,
-    transitionRearSlipFloor: 0.62,
-    rearThrottleLongitudinalPriority: 0.92,
-    maxCoastScrubDecelMps2: 1.35,
-    minimumThrottleSpeedRetention: 0.992,
-    rearSlipBuildRate: 3.2,
-    rearSlipRecoveryRate: 0.48,
-    rearSlipThrottleHold: 0.78,
+    lowSpeedAssist: 0.35,
+
+    rearSlipBuildRate: 3.4,
+    rearSlipRecoveryRate: 0.42,
+    rearSlipThrottleHold: 0.82,
     rearSlipMinimumGripMultiplier: 0.34,
-    lowSpeedAssist: 0.35
+
+    maxCoastScrubDecelMps2: 1.10,
+    minimumThrottleSpeedRetention: 0.993,
+    transitionSpeedRetention: 0.999
+  },
+
+  states: {
+    grip: {
+      enterRearSlipRad: 0.10
+    },
+    entry: {
+      minimumSpeedMps: 5.0,
+      durationSec: 0.34,
+      rearGripMultiplier: 0.70,
+      frontGripMultiplier: 1.08,
+      yawTorque: 850
+    },
+    hold: {
+      rearSlipRad: 0.16,
+      rearGripMultiplier: 0.63,
+      throttleYawTorque: 520,
+      countersteerDamping: 0.38
+    },
+    transition: {
+      durationSec: 0.48,
+      rearGripMultiplier: 0.52,
+      frontGripMultiplier: 1.06,
+      yawTorque: 1650,
+      rearMemoryFloor: 0.68,
+      speedRetention: 0.9994
+    },
+    exit: {
+      durationSec: 0.32,
+      rearGripRecoveryMultiplier: 0.46,
+      yawDamping: 0.955
+    }
   },
 
   assists: {
-    countersteerAssist: 0.32,
-    yawDampingGrip: 0.9975,
-    yawDampingDrift: 0.9992,
-    transitionAssist: 0.18,
-    transitionBuild: 0.95,
-    transitionDecayPerSec: 1.05,
-    transitionRearGripMultiplier: 0.58,
-    transitionFrontGripMultiplier: 1.12,
-    transitionYawTorque: 1450,
-    driftAngleLimitDeg: 68
+    gripYawDamping: 0.9975,
+    driftYawDamping: 0.9995,
+    driftAngleLimitDeg: 72
   },
 
   visuals: {

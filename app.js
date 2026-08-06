@@ -3,14 +3,15 @@
 const CFG=window.CAR_CONFIG;
 const canvas=document.getElementById('game');
 const ctx=canvas.getContext('2d');
+
 const speedText=document.getElementById('speed');
 const angleText=document.getElementById('angle');
 const stateText=document.getElementById('state');
 const frontSlipText=document.getElementById('frontSlip');
-const controlStateText=document.getElementById('controlState');
 const rearSlipText=document.getElementById('rearSlip');
 const steerHudText=document.getElementById('steerHud');
 const transferHudText=document.getElementById('transferHud');
+const rearMemoryHud=document.getElementById('rearMemoryHud');
 const rotate=document.getElementById('rotateScreen');
 
 let W=0,H=0,D=1,last=performance.now(),raf=0;
@@ -24,13 +25,6 @@ const car={
   steerAngle:0
 };
 
-let smoke=[];
-let skids=[];
-let previousRearSlip=0;
-
-// Local car coordinates:
-// lateral: negative = left, positive = right
-// longitudinal: positive = front, negative = rear
 const tires=[
   {name:'FL',lateral:-CFG.chassis.trackWidth/2,longitudinal: CFG.chassis.cgToFrontAxle,steer:true, drive:false,slipMemory:0},
   {name:'FR',lateral: CFG.chassis.trackWidth/2,longitudinal: CFG.chassis.cgToFrontAxle,steer:true, drive:false,slipMemory:0},
@@ -38,16 +32,36 @@ const tires=[
   {name:'RR',lateral: CFG.chassis.trackWidth/2,longitudinal:-CFG.chassis.cgToRearAxle, steer:false,drive:true,slipMemory:0}
 ];
 
-let transitionLoad=0;
-let previousSteerDirection=0;
+const drift={
+  state:'GRIP',
+  timer:0,
+  transfer:0,
+  previousInputDirection:0,
+  currentInputDirection:0
+};
+
+let smoke=[];
+let skids=[];
+let previousRearSlip=0;
 
 function isLandscape(){return innerWidth>innerHeight}
+function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
+function magnitude(x,y){return Math.hypot(x,y)}
 
 function resetCar(){
   car.x=0;car.y=0;car.heading=-Math.PI/2;
   car.vx=0;car.vy=0;car.yawRate=0;car.steerAngle=0;
+
+  drift.state='GRIP';
+  drift.timer=0;
+  drift.transfer=0;
+  drift.previousInputDirection=0;
+  drift.currentInputDirection=0;
+
+  tires.forEach(t=>t.slipMemory=0);
+  previousRearSlip=0;
   cameraX=car.x;cameraY=car.y;
-  smoke=[];skids=[];previousRearSlip=0;transitionLoad=0;previousSteerDirection=0;tires.forEach(t=>t.slipMemory=0);
+  smoke=[];skids=[];
 }
 
 function syncOrientation(){
@@ -125,11 +139,26 @@ function drawEffects(){
   ctx.globalAlpha=1;
 }
 
+function getFrontWheelSteerAngle(tire){
+  const base=car.steerAngle;
+  if(!tire.steer||Math.abs(base)<0.001)return 0;
+
+  const direction=Math.sign(base);
+  const absBase=Math.abs(base);
+  const wheelbase=CFG.chassis.wheelbase;
+  const halfTrack=CFG.chassis.trackWidth/2;
+
+  const centerRadius=wheelbase/Math.max(0.05,Math.tan(absBase));
+  const isInner=(direction>0&&tire.lateral>0)||(direction<0&&tire.lateral<0);
+  const wheelRadius=Math.max(0.2,centerRadius+(isInner?-halfTrack:halfTrack));
+  const ackermannAngle=Math.atan(wheelbase/wheelRadius);
+  const blended=absBase+(ackermannAngle-absBase)*CFG.steering.ackermannStrength;
+  return direction*blended;
+}
+
 function drawCar(){
   const p=worldToScreen(car.x,car.y);
-  ctx.save();
-  ctx.translate(p.x,p.y);
-  ctx.rotate(car.heading+Math.PI/2);
+  ctx.save();ctx.translate(p.x,p.y);ctx.rotate(car.heading+Math.PI/2);
 
   const scale=26;
   const bodyW=CFG.chassis.trackWidth*scale;
@@ -148,8 +177,7 @@ function drawCar(){
   for(const tire of tires){
     const tx=tire.lateral*scale;
     const ty=-tire.longitudinal*scale;
-    ctx.save();
-    ctx.translate(tx,ty);
+    ctx.save();ctx.translate(tx,ty);
     if(tire.steer)ctx.rotate(getFrontWheelSteerAngle(tire));
     ctx.fillRect(-4,-9,8,18);
     ctx.restore();
@@ -158,42 +186,92 @@ function drawCar(){
   ctx.restore();
 }
 
-function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
-function magnitude(x,y){return Math.hypot(x,y)}
-function getFrontWheelSteerAngle(tire){
-  const base=car.steerAngle;
-  if(!tire.steer||Math.abs(base)<0.001)return 0;
+function updateStateMachine(dt,speed,rearSlip,frontSlip){
+  drift.currentInputDirection=(input.right?1:0)-(input.left?1:0);
 
-  const direction=Math.sign(base);
-  const absBase=Math.abs(base);
-  const wheelbase=CFG.chassis.wheelbase;
-  const halfTrack=CFG.chassis.trackWidth/2;
+  const reversed=
+    drift.currentInputDirection!==0 &&
+    drift.previousInputDirection!==0 &&
+    drift.currentInputDirection!==drift.previousInputDirection;
 
-  // Approximate turn radius from the requested center steering angle.
-  const centerRadius=wheelbase/Math.max(0.05,Math.tan(absBase));
-  const isInner=(direction>0&&tire.lateral>0)||(direction<0&&tire.lateral<0);
-  const wheelRadius=Math.max(0.2,centerRadius+(isInner?-halfTrack:halfTrack));
-  const ackermannAngle=Math.atan(wheelbase/wheelRadius);
+  if(drift.currentInputDirection!==0){
+    drift.previousInputDirection=drift.currentInputDirection;
+  }
 
-  const blended=absBase+(ackermannAngle-absBase)*CFG.steering.ackermannStrength;
-  return direction*blended;
+  if(reversed && speed>CFG.states.entry.minimumSpeedMps && rearSlip>0.08){
+    drift.state='TRANSITION';
+    drift.timer=CFG.states.transition.durationSec;
+    drift.transfer=1;
+  }
+
+  switch(drift.state){
+    case 'GRIP':
+      drift.transfer=Math.max(0,drift.transfer-dt*2.5);
+      if(
+        speed>CFG.states.entry.minimumSpeedMps &&
+        (
+          input.hand ||
+          (input.gas&&Math.abs(car.steerAngle)>0.10) ||
+          rearSlip>CFG.states.grip.enterRearSlipRad
+        )
+      ){
+        drift.state='ENTRY';
+        drift.timer=CFG.states.entry.durationSec;
+      }
+      break;
+
+    case 'ENTRY':
+      drift.timer-=dt;
+      drift.transfer=Math.min(1,drift.transfer+dt*3.0);
+      if(rearSlip>CFG.states.hold.rearSlipRad){
+        drift.state='HOLD';
+        drift.timer=0;
+      }else if(drift.timer<=0){
+        drift.state=rearSlip>0.10?'HOLD':'GRIP';
+      }
+      break;
+
+    case 'HOLD':
+      drift.transfer=Math.max(0.25,drift.transfer-dt*.45);
+      if(!input.gas && rearSlip<0.11){
+        drift.state='EXIT';
+        drift.timer=CFG.states.exit.durationSec;
+      }
+      break;
+
+    case 'TRANSITION':
+      drift.timer-=dt;
+      drift.transfer=Math.max(0.65,drift.transfer-dt*.35);
+      if(drift.timer<=0){
+        drift.state=rearSlip>0.11?'HOLD':'EXIT';
+        drift.timer=drift.state==='EXIT'?CFG.states.exit.durationSec:0;
+      }
+      break;
+
+    case 'EXIT':
+      drift.timer-=dt;
+      drift.transfer=Math.max(0,drift.transfer-dt*1.8);
+      if(rearSlip>CFG.states.hold.rearSlipRad&&input.gas){
+        drift.state='HOLD';
+      }else if(drift.timer<=0||rearSlip<0.05){
+        drift.state='GRIP';
+      }
+      break;
+  }
 }
 
-
-function updateSteering(dt,forwardSpeed,rearSlipEstimate){
+function updateSteering(dt,forwardSpeed){
   const targetInput=(input.right?1:0)-(input.left?1:0);
+  const drifting=drift.state!=='GRIP'&&drift.state!=='EXIT';
 
-  const fullDriftLock=CFG.steering.maxAngleDeg*Math.PI/180;
-  const gripLock=CFG.steering.gripMaxAngleDeg*Math.PI/180;
-  const rearIsSliding=rearSlipEstimate>=CFG.steering.driftFullLockRearSlipRad;
+  const fullLock=CFG.steering.driftMaxAngleDeg*Math.PI/180;
+  let maxAngle=drifting
+    ? fullLock
+    : CFG.steering.gripMaxAngleDeg*Math.PI/180;
 
-  // Normal driving uses a manageable steering range.
-  // Once the rear slides, full drift lock becomes available for countersteer.
-  let maxAngle=rearIsSliding?fullDriftLock:gripLock;
-
-  if(!rearIsSliding && forwardSpeed>CFG.steering.speedReductionStartMps){
+  if(!drifting && forwardSpeed>CFG.steering.speedReductionStartMps){
     const range=Math.max(
-      0.1,
+      .1,
       CFG.steering.speedReductionFullMps-CFG.steering.speedReductionStartMps
     );
     const t=clamp(
@@ -205,13 +283,40 @@ function updateSteering(dt,forwardSpeed,rearSlipEstimate){
   }
 
   const target=targetInput*maxAngle;
-  const movingTowardCenter=Math.abs(target)<Math.abs(car.steerAngle);
-  const rate=(movingTowardCenter
+  const returning=Math.abs(target)<Math.abs(car.steerAngle);
+  const rate=(returning
     ? CFG.steering.returnSpeedDegPerSec
     : CFG.steering.inputSpeedDegPerSec)*Math.PI/180;
 
   if(car.steerAngle<target)car.steerAngle=Math.min(target,car.steerAngle+rate*dt);
   else if(car.steerAngle>target)car.steerAngle=Math.max(target,car.steerAngle-rate*dt);
+}
+
+function stateMultipliers(){
+  switch(drift.state){
+    case 'ENTRY':
+      return {
+        front:CFG.states.entry.frontGripMultiplier,
+        rear:CFG.states.entry.rearGripMultiplier,
+        yaw:CFG.states.entry.yawTorque
+      };
+    case 'HOLD':
+      return {
+        front:1,
+        rear:CFG.states.hold.rearGripMultiplier,
+        yaw:input.gas?CFG.states.hold.throttleYawTorque:0
+      };
+    case 'TRANSITION':
+      return {
+        front:CFG.states.transition.frontGripMultiplier,
+        rear:CFG.states.transition.rearGripMultiplier,
+        yaw:CFG.states.transition.yawTorque
+      };
+    case 'EXIT':
+      return {front:1,rear:0.82,yaw:0};
+    default:
+      return {front:1,rear:1,yaw:0};
+  }
 }
 
 function update(dt){
@@ -221,45 +326,26 @@ function update(dt){
 
   const bodyForwardSpeed=car.vx*forward.x+car.vy*forward.y;
   const bodyLateralSpeed=car.vx*right.x+car.vy*right.y;
-
-  updateSteering(dt,Math.abs(bodyForwardSpeed),previousRearSlip);
-
-  const requestedSteerDirection=(input.right?1:0)-(input.left?1:0);
-  const currentSteerDirection=Math.sign(car.steerAngle);
-
-  if(
-    requestedSteerDirection!==0 &&
-    previousSteerDirection!==0 &&
-    requestedSteerDirection!==previousSteerDirection &&
-    Math.abs(bodyForwardSpeed)>5
-  ){
-    transitionLoad=Math.min(
-      1,
-      transitionLoad+CFG.assists.transitionBuild
-    );
-  }
-  if(requestedSteerDirection!==0){
-    previousSteerDirection=requestedSteerDirection;
-  }
-  transitionLoad=Math.max(
-    0,
-    transitionLoad-CFG.assists.transitionDecayPerSec*dt
-  );
-
   const speedBeforeForces=Math.hypot(car.vx,car.vy);
 
+  updateStateMachine(
+    dt,
+    Math.abs(bodyForwardSpeed),
+    previousRearSlip,
+    0
+  );
+  updateSteering(dt,Math.abs(bodyForwardSpeed));
+
+  const stateFx=stateMultipliers();
+
   let totalFx=0,totalFy=0,totalTorque=0;
-  let rearSlipSum=0;
-  let rearSlipCount=0;
-  let frontSlipSum=0;
-  let frontSlipCount=0;
+  let rearSlipSum=0,rearSlipCount=0;
+  let frontSlipSum=0,frontSlipCount=0;
 
   for(const tire of tires){
-    // Correct world contact point from the car's local axes.
-    const rx=right.x*tire.lateral + forward.x*tire.longitudinal;
-    const ry=right.y*tire.lateral + forward.y*tire.longitudinal;
+    const rx=right.x*tire.lateral+forward.x*tire.longitudinal;
+    const ry=right.y*tire.lateral+forward.y*tire.longitudinal;
 
-    // Velocity at this tire contact point, including body rotation.
     const pointVx=car.vx-car.yawRate*ry;
     const pointVy=car.vy+car.yawRate*rx;
 
@@ -270,109 +356,69 @@ function update(dt){
 
     const longSpeed=pointVx*tireForward.x+pointVy*tireForward.y;
     const latSpeed=pointVx*tireRight.x+pointVy*tireRight.y;
-    const slipAngle=Math.atan2(latSpeed,Math.abs(longSpeed)+0.75);
+    const slipAngle=Math.atan2(latSpeed,Math.abs(longSpeed)+.75);
+    const tireSlip=Math.abs(slipAngle);
 
     let stiffness=tire.steer
       ? CFG.tires.frontCorneringStiffness
       : CFG.tires.rearCorneringStiffness;
 
     let maxLateral=tire.steer
-      ? CFG.tires.frontMaxLateralForce
-      : CFG.tires.rearMaxLateralForce;
+      ? CFG.tires.frontMaxLateralForce*stateFx.front
+      : CFG.tires.rearMaxLateralForce*stateFx.rear;
 
     let driveForce=0;
     if(tire.drive&&input.gas&&!input.brake){
       driveForce=CFG.engine.driveForce/2;
-      maxLateral*=CFG.tires.rearDriveGripMultiplier;
     }
 
     if(tire.drive&&input.hand){
       maxLateral*=CFG.brakes.handbrakeRearGripMultiplier;
     }
 
-    // Persistent rear tire slip memory.
-    // Grip drops progressively while spinning/sliding and returns slowly.
     if(tire.drive){
       const slipDemand=Math.min(
         1,
-        Math.abs(slipAngle)/0.42 +
-        (input.gas?0.26:0) +
-        (input.hand?0.55:0)
+        tireSlip/.42+(input.gas?.24:0)+(input.hand?.55:0)
       );
 
-      if(slipDemand>0.24){
+      if(slipDemand>.22){
         tire.slipMemory=Math.min(
           1,
           tire.slipMemory+CFG.tires.rearSlipBuildRate*slipDemand*dt
         );
-      }else if(transitionLoad>0.08){
+      }else if(drift.state==='TRANSITION'){
         tire.slipMemory=Math.max(
-          CFG.tires.transitionRearSlipFloor,
+          CFG.states.transition.rearMemoryFloor,
           tire.slipMemory
         );
       }else{
-        const recovery=input.gas
-          ? CFG.tires.rearSlipRecoveryRate*(1-CFG.tires.rearSlipThrottleHold)
-          : CFG.tires.rearSlipRecoveryRate;
+        let recovery=CFG.tires.rearSlipRecoveryRate;
+        if(input.gas)recovery*=1-CFG.tires.rearSlipThrottleHold;
+        if(drift.state==='EXIT')recovery*=CFG.states.exit.rearGripRecoveryMultiplier;
 
-        tire.slipMemory=Math.max(
-          0,
-          tire.slipMemory-recovery*dt
-        );
+        tire.slipMemory=Math.max(0,tire.slipMemory-recovery*dt);
       }
 
       const memoryGrip=
         1-(1-CFG.tires.rearSlipMinimumGripMultiplier)*tire.slipMemory;
 
       maxLateral*=memoryGrip;
-      maxLateral*=1-transitionLoad*(1-CFG.assists.transitionRearGripMultiplier);
-    }else{
-      maxLateral*=1+transitionLoad*(CFG.assists.transitionFrontGripMultiplier-1);
     }
 
-    // Powered rear tires lose lateral capacity when throttle and steering
-    // demand exceed their available grip. This creates power oversteer.
-    const powerOversteer =
-      tire.drive &&
-      input.gas &&
-      Math.abs(bodyForwardSpeed)>CFG.tires.powerOversteerStartMps &&
-      Math.abs(car.steerAngle)>CFG.tires.powerOversteerSteerRad;
-
-    if(powerOversteer){
-      maxLateral*=CFG.tires.powerOversteerRearGripMultiplier;
-    }
-
-    let lateralForce=clamp(-slipAngle*stiffness,-maxLateral,maxLateral);
-
-    if(tire.steer){
-      const extremeStart=CFG.tires.extremeLockStartDeg*Math.PI/180;
-      const wheelLock=Math.abs(tireSteer);
-
-      if(wheelLock>extremeStart){
-        const fullLock=Math.max(
-          extremeStart+0.01,
-          CFG.steering.maxAngleDeg*Math.PI/180
-        );
-        const t=clamp(
-          (wheelLock-extremeStart)/(fullLock-extremeStart),
-          0,
-          1
-        );
-        const multiplier=
-          1-t*(1-CFG.tires.extremeLockFrontForceMultiplier);
-        lateralForce*=multiplier;
-      }
-    }
+    let lateralForce=clamp(
+      -slipAngle*stiffness,
+      -maxLateral,
+      maxLateral
+    );
 
     if(Math.abs(longSpeed)<2){
       lateralForce*=CFG.tires.lowSpeedAssist;
     }
 
     let brakeForce=0;
-
-    // Foot brake acts at all four wheels opposite their longitudinal motion.
     if(input.brake){
-      if(Math.abs(bodyForwardSpeed)>0.8){
+      if(Math.abs(bodyForwardSpeed)>.8){
         const sign=Math.sign(longSpeed||bodyForwardSpeed||1);
         brakeForce=-sign*CFG.brakes.footBrakeForce/4;
       }else if(tire.drive){
@@ -380,44 +426,29 @@ function update(dt){
       }
     }
 
-    // Handbrake locks only the rear wheels longitudinally.
     if(tire.drive&&input.hand){
-      const rearLongSign=Math.sign(longSpeed||bodyForwardSpeed||1);
-      brakeForce+=-rearLongSign*CFG.brakes.handbrakeRearLongitudinalForce/2;
+      const sign=Math.sign(longSpeed||bodyForwardSpeed||1);
+      brakeForce+=-sign*CFG.brakes.handbrakeRearLongitudinalForce/2;
     }
 
     let longitudinalForce=driveForce+brakeForce;
 
-    // Combined tire-force limit: a tire cannot provide maximum forward and
-    // lateral force simultaneously. Rear tires have a smaller combined budget
-    // so throttle can break them loose.
-    const combinedGrip=tire.steer
+    const forceBudget=maxLateral*(tire.steer
       ? CFG.tires.frontCombinedGrip
-      : CFG.tires.rearCombinedGrip;
+      : CFG.tires.rearCombinedGrip);
 
-    const forceBudget=maxLateral*combinedGrip;
-
-    if(tire.drive && input.gas && !input.brake){
-      // Rear-wheel-drive arcade priority:
-      // preserve most engine force and sacrifice lateral grip first.
-      const protectedLongitudinal=
-        longitudinalForce*CFG.tires.rearThrottleLongitudinalPriority;
-
-      const remainingBudgetSq=Math.max(
+    if(tire.drive&&input.gas&&!input.brake){
+      const protectedLongitudinal=longitudinalForce*.92;
+      const remaining=Math.max(
         0,
         forceBudget*forceBudget-protectedLongitudinal*protectedLongitudinal
       );
-
-      const allowedLateral=Math.sqrt(remainingBudgetSq);
+      const allowedLateral=Math.sqrt(remaining);
       lateralForce=clamp(lateralForce,-allowedLateral,allowedLateral);
-
-      // Retain the requested engine force instead of scaling it down with
-      // lateral demand. This lets the rear tires spin and rotate the car.
     }else{
-      const requestedMagnitude=Math.hypot(longitudinalForce,lateralForce);
-
-      if(requestedMagnitude>forceBudget && requestedMagnitude>0){
-        const scale=forceBudget/requestedMagnitude;
+      const requested=Math.hypot(longitudinalForce,lateralForce);
+      if(requested>forceBudget&&requested>0){
+        const scale=forceBudget/requested;
         longitudinalForce*=scale;
         lateralForce*=scale;
       }
@@ -430,16 +461,12 @@ function update(dt){
     totalFy+=fy;
     totalTorque+=rx*fy-ry*fx;
 
-    // Per-tire smoke and skid effects.
     const tireWorldX=car.x+rx*26;
     const tireWorldY=car.y+ry*26;
-    const tireSlip=Math.abs(slipAngle);
-    const wheelSpinning=tire.drive&&input.gas&&Math.abs(longSpeed)>4;
-    const rearSliding=tire.drive&&tireSlip>0.13&&Math.abs(longSpeed)>3.5;
-    const frontSevereScrub=tire.steer&&tireSlip>0.48&&Math.abs(longSpeed)>9;
-    const leavingMark=rearSliding||frontSevereScrub;
+    const rearSliding=tire.drive&&tireSlip>.13&&Math.abs(longSpeed)>3.5;
+    const frontSevere=tire.steer&&tireSlip>.48&&Math.abs(longSpeed)>9;
 
-    if(leavingMark){
+    if(rearSliding||frontSevere){
       skids.push({
         x1:tireWorldX-right.x*3,
         y1:tireWorldY-right.y*3,
@@ -449,7 +476,7 @@ function update(dt){
       });
 
       const smokeRate=tire.drive
-        ? (wheelSpinning?58:24)*tireSlip
+        ? (input.gas?58:24)*tireSlip
         : 5*tireSlip;
 
       if(Math.random()<dt*smokeRate){
@@ -471,75 +498,68 @@ function update(dt){
     }
   }
 
+  const averageFrontSlip=frontSlipCount?frontSlipSum/frontSlipCount:0;
+  const averageRearSlip=rearSlipCount?rearSlipSum/rearSlipCount:0;
+  previousRearSlip=averageRearSlip;
+
   car.vx+=(totalFx/CFG.chassis.mass)*dt;
   car.vy+=(totalFy/CFG.chassis.mass)*dt;
 
-  const transitionDirection=Math.sign(car.steerAngle||previousSteerDirection);
-  const transitionTorque=
-    transitionDirection *
-    transitionLoad *
-    CFG.assists.transitionYawTorque;
+  const stateDirection=Math.sign(
+    drift.currentInputDirection||car.steerAngle||bodyLateralSpeed||1
+  );
 
-  car.yawRate+=(
-    totalTorque+transitionTorque
-  )/CFG.chassis.yawInertia*dt;
+  const stateYawTorque=stateDirection*stateFx.yaw*drift.transfer;
+  car.yawRate+=(totalTorque+stateYawTorque)/CFG.chassis.yawInertia*dt;
 
-  // Arcade scrub-loss cap:
-  // tire slip may redirect momentum, but cannot act like a brake pedal.
-  if(!input.brake && !input.hand && speedBeforeForces>0.5){
-    const speedAfterForces=Math.hypot(car.vx,car.vy);
-    const minimumAllowedSpeed=Math.max(
+  if(drift.state==='HOLD'){
+    const slipSign=Math.sign(bodyLateralSpeed);
+    const steerSign=Math.sign(car.steerAngle);
+    if(slipSign!==0&&steerSign===-slipSign){
+      car.yawRate*=1-CFG.states.hold.countersteerDamping*dt;
+    }
+  }
+
+  const damping=(drift.state==='GRIP'||drift.state==='EXIT')
+    ? CFG.assists.gripYawDamping
+    : CFG.assists.driftYawDamping;
+
+  car.yawRate*=Math.pow(damping,dt*60);
+
+  const maxYaw=CFG.assists.driftAngleLimitDeg*Math.PI/180;
+  car.yawRate=clamp(car.yawRate,-maxYaw,maxYaw);
+  car.heading+=car.yawRate*dt;
+
+  if(!input.brake&&!input.hand&&speedBeforeForces>.5){
+    const after=Math.hypot(car.vx,car.vy);
+    const minimum=Math.max(
       0,
       speedBeforeForces-CFG.tires.maxCoastScrubDecelMps2*dt
     );
 
-    if(speedAfterForces<minimumAllowedSpeed && speedAfterForces>0.001){
-      const restore=minimumAllowedSpeed/speedAfterForces;
-      car.vx*=restore;
-      car.vy*=restore;
+    if(after<minimum&&after>.001){
+      const restore=minimum/after;
+      car.vx*=restore;car.vy*=restore;
     }
   }
 
-  // While accelerating, do not let tire scrub instantly erase momentum.
-  if(input.gas && !input.brake && speedBeforeForces>2){
-    const speedAfterRestore=Math.hypot(car.vx,car.vy);
-    const retention=transitionLoad>0.08
-      ? CFG.tires.transitionSpeedRetention
-      : CFG.tires.minimumThrottleSpeedRetention;
-    const throttleFloor=speedBeforeForces*retention;
+  if(input.gas&&!input.brake&&speedBeforeForces>2){
+    const after=Math.hypot(car.vx,car.vy);
 
-    if(speedAfterRestore<throttleFloor && speedAfterRestore>0.001){
-      const restore=throttleFloor/speedAfterRestore;
-      car.vx*=restore;
-      car.vy*=restore;
+    let retention=CFG.tires.minimumThrottleSpeedRetention;
+    if(drift.state==='TRANSITION'){
+      retention=CFG.states.transition.speedRetention;
+    }
+
+    const floor=speedBeforeForces*retention;
+    if(after<floor&&after>.001){
+      const restore=floor/after;
+      car.vx*=restore;car.vy*=restore;
     }
   }
 
-  const averageRearSlip=rearSlipCount?rearSlipSum/rearSlipCount:0;
-  previousRearSlip=averageRearSlip;
-  const averageFrontSlip=frontSlipCount?frontSlipSum/frontSlipCount:0;
-  const drifting=averageRearSlip>0.18&&Math.abs(bodyForwardSpeed)>5;
-
-  const yawDamping=drifting
-    ? CFG.assists.yawDampingDrift
-    : CFG.assists.yawDampingGrip;
-  car.yawRate*=Math.pow(yawDamping,dt*60);
-
-  const slipSign=Math.sign(bodyLateralSpeed);
-  const steerSign=Math.sign(car.steerAngle);
-
-  if(drifting&&slipSign!==0&&steerSign===-slipSign){
-    car.yawRate*=1-CFG.assists.countersteerAssist*dt;
-  }
-
-  const maxYaw=CFG.assists.driftAngleLimitDeg*Math.PI/180;
-  car.yawRate=clamp(car.yawRate,-maxYaw,maxYaw);
-
-  car.heading+=car.yawRate*dt;
-
-  const roll=CFG.engine.rollingResistance;
-  car.vx*=Math.pow(roll,dt*60);
-  car.vy*=Math.pow(roll,dt*60);
+  car.vx*=Math.pow(CFG.engine.rollingResistance,dt*60);
+  car.vy*=Math.pow(CFG.engine.rollingResistance,dt*60);
 
   car.x+=car.vx*26*dt;
   car.y+=car.vy*26*dt;
@@ -550,8 +570,10 @@ function update(dt){
   cameraX+=(car.x-cameraX)*Math.min(1,dt*4.2);
   cameraY+=(car.y-cameraY)*Math.min(1,dt*4.2);
 
-  const speed=magnitude(car.vx,car.vy);
-  const driftAngle=Math.atan2(bodyLateralSpeed,Math.abs(bodyForwardSpeed)+.01);
+  const driftAngle=Math.atan2(
+    bodyLateralSpeed,
+    Math.abs(bodyForwardSpeed)+.01
+  );
 
   smoke.forEach(p=>{p.life-=dt;p.radius+=dt*7});
   smoke=smoke.filter(p=>p.life>0);
@@ -559,14 +581,18 @@ function update(dt){
   skids.forEach(mark=>mark.life-=dt);
   skids=skids.filter(mark=>mark.life>0);
 
-  speedText.textContent=Math.round(speed*2.237)+' MPH';
+  const rearLeft=tires.find(t=>t.name==='RL').slipMemory;
+  const rearRight=tires.find(t=>t.name==='RR').slipMemory;
+
+  speedText.textContent=Math.round(magnitude(car.vx,car.vy)*2.237)+' MPH';
   angleText.textContent=Math.round(Math.abs(driftAngle*180/Math.PI))+'°';
-  stateText.textContent=drifting?'DRIFT':'GRIP';
+  stateText.textContent=drift.state;
   frontSlipText.textContent='F '+Math.round(averageFrontSlip*180/Math.PI)+'°';
   rearSlipText.textContent='R '+Math.round(averageRearSlip*180/Math.PI)+'°';
   steerHudText.textContent='S '+Math.round(Math.abs(car.steerAngle)*180/Math.PI)+'°';
-  transferHudText.textContent='T '+Math.round(transitionLoad*100)+'%';
-  controlStateText.textContent=input.hand?'E-BRAKE':input.brake?'BRAKE':input.gas?'GAS':'COAST';
+  transferHudText.textContent='T '+Math.round(drift.transfer*100)+'%';
+  rearMemoryHud.textContent=
+    'M '+Math.round(rearLeft*100)+'/'+Math.round(rearRight*100);
 }
 
 function draw(){drawTrack();drawEffects();drawCar()}
