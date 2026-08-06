@@ -1,29 +1,16 @@
-# Drift Handling Reset V2.0
+# Drift Handling Reset V2.1
 
-This is a clean handling restart.
+Fixes:
+- Corrected front/rear and left/right tire coordinate system.
+- Removed the constant left pull caused by the old wheel-axis rotation.
+- Each tire now calculates its own smoke and skid marks.
+- Rear driven tires create more smoke under throttle.
+- Front tires can also leave skid marks when sliding.
+- All V2.0 per-car configuration and four-tire physics retained.
 
-Files:
+Upload all five files together:
 - index.html
 - style.css
 - car-config.js
 - app.js
 - manifest.json
-
-Important changes:
-- One editable per-car configuration file
-- Four individual tire contact points
-- Individual tire slip-angle calculation
-- Front steering tires
-- Rear driven tires
-- Rear-only handbrake grip reduction
-- Chassis mass, wheelbase, track width, and yaw inertia
-- No previous drift-level or fake yaw-boost system
-
-Testing target:
-- Easy initiation
-- Stable 30–60 degree drift
-- Natural countersteer
-- No endless 360s
-- Smooth left/right transitions
-
-Upload all five files together.
