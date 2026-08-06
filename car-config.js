@@ -13,16 +13,16 @@ window.CAR_CONFIG = {
 
   steering: {
     maxAngleDeg: 55,
-    inputSpeedDegPerSec: 220,
-    returnSpeedDegPerSec: 260,
+    inputSpeedDegPerSec: 150,
+    returnSpeedDegPerSec: 210,
     speedReductionStartMps: 18,
     speedReductionAmount: 0.22
   },
 
   engine: {
-    driveForce: 8600,
+    driveForce: 9600,
     reverseForce: 3600,
-    topSpeedMps: 31,
+    topSpeedMps: 33,
     rollingResistance: 0.992
   },
 
@@ -32,10 +32,10 @@ window.CAR_CONFIG = {
   },
 
   tires: {
-    frontCorneringStiffness: 7300,
-    rearCorneringStiffness: 6200,
-    frontMaxLateralForce: 7800,
-    rearMaxLateralForce: 6200,
+    frontCorneringStiffness: 9800,
+    rearCorneringStiffness: 6500,
+    frontMaxLateralForce: 10500,
+    rearMaxLateralForce: 6600,
     rearDriveSlipStart: 0.55,
     rearDriveGripMultiplier: 0.48,
     lowSpeedAssist: 0.35

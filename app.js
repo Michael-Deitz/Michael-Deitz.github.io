@@ -6,6 +6,7 @@ const ctx=canvas.getContext('2d');
 const speedText=document.getElementById('speed');
 const angleText=document.getElementById('angle');
 const stateText=document.getElementById('state');
+const frontSlipText=document.getElementById('frontSlip');
 const rotate=document.getElementById('rotateScreen');
 
 let W=0,H=0,D=1,last=performance.now(),raf=0;
@@ -183,6 +184,8 @@ function update(dt){
   let totalFx=0,totalFy=0,totalTorque=0;
   let rearSlipSum=0;
   let rearSlipCount=0;
+  let frontSlipSum=0;
+  let frontSlipCount=0;
 
   for(const tire of tires){
     // Correct world contact point from the car's local axes.
@@ -269,7 +272,10 @@ function update(dt){
       }
     }
 
-    if(!tire.steer){
+    if(tire.steer){
+      frontSlipSum+=tireSlip;
+      frontSlipCount++;
+    }else{
       rearSlipSum+=tireSlip;
       rearSlipCount++;
     }
@@ -280,6 +286,7 @@ function update(dt){
   car.yawRate+=(totalTorque/CFG.chassis.yawInertia)*dt;
 
   const averageRearSlip=rearSlipCount?rearSlipSum/rearSlipCount:0;
+  const averageFrontSlip=frontSlipCount?frontSlipSum/frontSlipCount:0;
   const drifting=averageRearSlip>0.18&&Math.abs(bodyForwardSpeed)>5;
 
   const yawDamping=drifting
@@ -324,6 +331,7 @@ function update(dt){
   speedText.textContent=Math.round(speed*2.237)+' MPH';
   angleText.textContent=Math.round(Math.abs(driftAngle*180/Math.PI))+'°';
   stateText.textContent=drifting?'DRIFT':'GRIP';
+  frontSlipText.textContent='F '+Math.round(averageFrontSlip*180/Math.PI)+'°';
 }
 
 function draw(){drawTrack();drawEffects();drawCar()}
