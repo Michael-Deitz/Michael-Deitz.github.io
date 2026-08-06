@@ -8,22 +8,23 @@ window.CAR_CONFIG = {
     trackWidth: 1.52,
     cgToFrontAxle: 1.12,
     cgToRearAxle: 1.40,
-    yawInertia: 1750
+    yawInertia: 1280
   },
 
   steering: {
-    maxAngleDeg: 55,
+    maxAngleDeg: 60,
     inputSpeedDegPerSec: 150,
     returnSpeedDegPerSec: 210,
     speedReductionStartMps: 4,
     speedReductionFullMps: 18,
-    speedReductionAmount: 0.62,
-    driftFullLockRearSlipRad: 0.16
+    speedReductionAmount: 0.66,
+    driftFullLockRearSlipRad: 0.16,
+    ackermannStrength: 0.72
   },
 
   engine: {
     driveForce: 9600,
-    reverseForce: 3600,
+    reverseForce: 6800,
     topSpeedMps: 33,
     rollingResistance: 0.992
   },
@@ -35,10 +36,10 @@ window.CAR_CONFIG = {
   },
 
   tires: {
-    frontCorneringStiffness: 9800,
-    rearCorneringStiffness: 6500,
-    frontMaxLateralForce: 11800,
-    rearMaxLateralForce: 6600,
+    frontCorneringStiffness: 14500,
+    rearCorneringStiffness: 6800,
+    frontMaxLateralForce: 16500,
+    rearMaxLateralForce: 7000,
     rearDriveSlipStart: 0.55,
     rearDriveGripMultiplier: 0.48,
     lowSpeedAssist: 0.35

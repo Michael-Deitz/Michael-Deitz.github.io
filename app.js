@@ -8,6 +8,7 @@ const angleText=document.getElementById('angle');
 const stateText=document.getElementById('state');
 const frontSlipText=document.getElementById('frontSlip');
 const controlStateText=document.getElementById('controlState');
+const rearSlipText=document.getElementById('rearSlip');
 const rotate=document.getElementById('rotateScreen');
 
 let W=0,H=0,D=1,last=performance.now(),raf=0;
@@ -144,7 +145,7 @@ function drawCar(){
     const ty=-tire.longitudinal*scale;
     ctx.save();
     ctx.translate(tx,ty);
-    if(tire.steer)ctx.rotate(car.steerAngle);
+    if(tire.steer)ctx.rotate(getFrontWheelSteerAngle(tire));
     ctx.fillRect(-4,-9,8,18);
     ctx.restore();
   }
@@ -154,6 +155,25 @@ function drawCar(){
 
 function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
 function magnitude(x,y){return Math.hypot(x,y)}
+function getFrontWheelSteerAngle(tire){
+  const base=car.steerAngle;
+  if(!tire.steer||Math.abs(base)<0.001)return 0;
+
+  const direction=Math.sign(base);
+  const absBase=Math.abs(base);
+  const wheelbase=CFG.chassis.wheelbase;
+  const halfTrack=CFG.chassis.trackWidth/2;
+
+  // Approximate turn radius from the requested center steering angle.
+  const centerRadius=wheelbase/Math.max(0.05,Math.tan(absBase));
+  const isInner=(direction>0&&tire.lateral>0)||(direction<0&&tire.lateral<0);
+  const wheelRadius=Math.max(0.2,centerRadius+(isInner?-halfTrack:halfTrack));
+  const ackermannAngle=Math.atan(wheelbase/wheelRadius);
+
+  const blended=absBase+(ackermannAngle-absBase)*CFG.steering.ackermannStrength;
+  return direction*blended;
+}
+
 
 function updateSteering(dt,forwardSpeed,rearSlipEstimate){
   const targetInput=(input.right?1:0)-(input.left?1:0);
@@ -214,7 +234,8 @@ function update(dt){
     const pointVx=car.vx-car.yawRate*ry;
     const pointVy=car.vy+car.yawRate*rx;
 
-    const tireHeading=heading+(tire.steer?car.steerAngle:0);
+    const tireSteer=tire.steer?getFrontWheelSteerAngle(tire):0;
+    const tireHeading=heading+tireSteer;
     const tireForward={x:Math.cos(tireHeading),y:Math.sin(tireHeading)};
     const tireRight={x:Math.cos(tireHeading+Math.PI/2),y:Math.sin(tireHeading+Math.PI/2)};
 
@@ -360,6 +381,7 @@ function update(dt){
   angleText.textContent=Math.round(Math.abs(driftAngle*180/Math.PI))+'°';
   stateText.textContent=drifting?'DRIFT':'GRIP';
   frontSlipText.textContent='F '+Math.round(averageFrontSlip*180/Math.PI)+'°';
+  rearSlipText.textContent='R '+Math.round(averageRearSlip*180/Math.PI)+'°';
   controlStateText.textContent=input.hand?'E-BRAKE':input.brake?'BRAKE':input.gas?'GAS':'COAST';
 }
 
