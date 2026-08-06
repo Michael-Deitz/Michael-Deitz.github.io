@@ -22,6 +22,13 @@ window.CAR_CONFIG = {
     ackermannStrength: 0.72
   },
 
+  drivetrain: {
+    type: "locked",
+    diffLock: 1.0,
+    rearSlipSyncRate: 8.0,
+    rearForceSplit: 0.5
+  },
+
   engine: {
     driveForce: 9600,
     reverseForce: 6800,

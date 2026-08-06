@@ -44,6 +44,29 @@ let smoke=[];
 let skids=[];
 let previousRearSlip=0;
 
+function rearTires(){
+  return tires.filter(t=>t.drive);
+}
+
+function syncLockedDifferential(dt){
+  if(CFG.drivetrain.type!=="locked")return;
+
+  const rear=rearTires();
+  if(rear.length!==2)return;
+
+  const averageMemory=(rear[0].slipMemory+rear[1].slipMemory)/2;
+  const rate=clamp(CFG.drivetrain.rearSlipSyncRate*dt,0,1);
+
+  rear[0].slipMemory+=(
+    averageMemory-rear[0].slipMemory
+  )*rate;
+
+  rear[1].slipMemory+=(
+    averageMemory-rear[1].slipMemory
+  )*rate;
+}
+
+
 function isLandscape(){return innerWidth>innerHeight}
 function clamp(v,min,max){return Math.max(min,Math.min(max,v))}
 function magnitude(x,y){return Math.hypot(x,y)}
@@ -338,6 +361,10 @@ function update(dt){
 
   const stateFx=stateMultipliers();
 
+  // A welded/locked differential keeps both rear tires tied together.
+  // Their wheelspin state is synchronized before calculating tire forces.
+  syncLockedDifferential(dt);
+
   let totalFx=0,totalFy=0,totalTorque=0;
   let rearSlipSum=0,rearSlipCount=0;
   let frontSlipSum=0,frontSlipCount=0;
@@ -369,7 +396,7 @@ function update(dt){
 
     let driveForce=0;
     if(tire.drive&&input.gas&&!input.brake){
-      driveForce=CFG.engine.driveForce/2;
+      driveForce=CFG.engine.driveForce*CFG.drivetrain.rearForceSplit;
     }
 
     if(tire.drive&&input.hand){
@@ -463,7 +490,20 @@ function update(dt){
 
     const tireWorldX=car.x+rx*26;
     const tireWorldY=car.y+ry*26;
-    const rearSliding=tire.drive&&tireSlip>.13&&Math.abs(longSpeed)>3.5;
+    const lockedRearSpin=
+      tire.drive &&
+      CFG.drivetrain.type==="locked" &&
+      (input.gas||input.hand) &&
+      tire.slipMemory>.22 &&
+      Math.abs(bodyForwardSpeed)>3.5;
+
+    const rearSliding=
+      tire.drive &&
+      (
+        (tireSlip>.13&&Math.abs(longSpeed)>3.5) ||
+        lockedRearSpin
+      );
+
     const frontSevere=tire.steer&&tireSlip>.48&&Math.abs(longSpeed)>9;
 
     if(rearSliding||frontSevere){
@@ -501,6 +541,18 @@ function update(dt){
   const averageFrontSlip=frontSlipCount?frontSlipSum/frontSlipCount:0;
   const averageRearSlip=rearSlipCount?rearSlipSum/rearSlipCount:0;
   previousRearSlip=averageRearSlip;
+
+  if(CFG.drivetrain.type==="locked"){
+    const rear=rearTires();
+    if(rear.length===2){
+      const linkedMemory=(input.gas||input.hand)
+        ? Math.max(rear[0].slipMemory,rear[1].slipMemory)
+        : (rear[0].slipMemory+rear[1].slipMemory)/2;
+
+      rear[0].slipMemory=linkedMemory;
+      rear[1].slipMemory=linkedMemory;
+    }
+  }
 
   car.vx+=(totalFx/CFG.chassis.mass)*dt;
   car.vy+=(totalFy/CFG.chassis.mass)*dt;
