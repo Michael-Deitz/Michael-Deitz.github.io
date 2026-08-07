@@ -31,15 +31,15 @@ window.CAR_CONFIG = {
 
   engine: {
     driveForce: 9600,
-    reverseForce: 6800,
+    reverseForce: 9600,
     topSpeedMps: 33,
     rollingResistance: 0.992
   },
 
   brakes: {
     footBrakeForce: 19000,
-    handbrakeRearGripMultiplier: 0.15,
-    handbrakeRearLongitudinalForce: 7000
+    handbrakeRearGripMultiplier: 0.135,
+    handbrakeRearLongitudinalForce: 7700
   },
 
   tires: {
@@ -80,11 +80,12 @@ window.CAR_CONFIG = {
     },
     transition: {
       durationSec: 0.48,
+      protectedBufferSec: 0.28,
       rearGripMultiplier: 0.52,
       frontGripMultiplier: 1.06,
       yawTorque: 1650,
       rearMemoryFloor: 0.68,
-      speedRetention: 0.9994
+      speedRetention: 1.0
     },
     exit: {
       durationSec: 0.32,

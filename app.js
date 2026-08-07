@@ -35,6 +35,7 @@ const tires=[
 const drift={
   state:'GRIP',
   timer:0,
+  transitionBuffer:0,
   transfer:0,
   previousInputDirection:0,
   currentInputDirection:0
@@ -77,6 +78,7 @@ function resetCar(){
 
   drift.state='GRIP';
   drift.timer=0;
+  drift.transitionBuffer=0;
   drift.transfer=0;
   drift.previousInputDirection=0;
   drift.currentInputDirection=0;
@@ -224,6 +226,7 @@ function updateStateMachine(dt,speed,rearSlip,frontSlip){
   if(reversed && speed>CFG.states.entry.minimumSpeedMps && rearSlip>0.08){
     drift.state='TRANSITION';
     drift.timer=CFG.states.transition.durationSec;
+    drift.transitionBuffer=CFG.states.transition.protectedBufferSec;
     drift.transfer=1;
   }
 
@@ -264,6 +267,7 @@ function updateStateMachine(dt,speed,rearSlip,frontSlip){
 
     case 'TRANSITION':
       drift.timer-=dt;
+      drift.transitionBuffer=Math.max(0,drift.transitionBuffer-dt);
       drift.transfer=Math.max(0.65,drift.transfer-dt*.35);
       if(drift.timer<=0){
         drift.state=rearSlip>0.11?'HOLD':'EXIT';
@@ -415,8 +419,11 @@ function update(dt){
           tire.slipMemory+CFG.tires.rearSlipBuildRate*slipDemand*dt
         );
       }else if(drift.state==='TRANSITION'){
+        const protectedFloor=drift.transitionBuffer>0
+          ? Math.max(CFG.states.transition.rearMemoryFloor,0.82)
+          : CFG.states.transition.rearMemoryFloor;
         tire.slipMemory=Math.max(
-          CFG.states.transition.rearMemoryFloor,
+          protectedFloor,
           tire.slipMemory
         );
       }else{
@@ -445,10 +452,10 @@ function update(dt){
 
     let brakeForce=0;
     if(input.brake){
-      if(Math.abs(bodyForwardSpeed)>.8){
+      if(bodyForwardSpeed>.8){
         const sign=Math.sign(longSpeed||bodyForwardSpeed||1);
         brakeForce=-sign*CFG.brakes.footBrakeForce/4;
-      }else if(tire.drive){
+      }else if(tire.drive && bodyForwardSpeed>-CFG.engine.topSpeedMps){
         brakeForce=-CFG.engine.reverseForce/2;
       }
     }
@@ -584,11 +591,9 @@ function update(dt){
 
   if(!input.brake&&!input.hand&&speedBeforeForces>.5){
     const after=Math.hypot(car.vx,car.vy);
-    const minimum=Math.max(
-      0,
-      speedBeforeForces-CFG.tires.maxCoastScrubDecelMps2*dt
-    );
-
+    const protectedTransition=drift.state==='TRANSITION' && drift.transitionBuffer>0;
+    const allowedDecel=protectedTransition ? 0 : CFG.tires.maxCoastScrubDecelMps2;
+    const minimum=Math.max(0,speedBeforeForces-allowedDecel*dt);
     if(after<minimum&&after>.001){
       const restore=minimum/after;
       car.vx*=restore;car.vy*=restore;
@@ -600,7 +605,7 @@ function update(dt){
 
     let retention=CFG.tires.minimumThrottleSpeedRetention;
     if(drift.state==='TRANSITION'){
-      retention=CFG.states.transition.speedRetention;
+      retention=drift.transitionBuffer>0 ? 1.0 : CFG.states.transition.speedRetention;
     }
 
     const floor=speedBeforeForces*retention;
@@ -643,8 +648,9 @@ function update(dt){
   rearSlipText.textContent='R '+Math.round(averageRearSlip*180/Math.PI)+'°';
   steerHudText.textContent='S '+Math.round(Math.abs(car.steerAngle)*180/Math.PI)+'°';
   transferHudText.textContent='T '+Math.round(drift.transfer*100)+'%';
-  rearMemoryHud.textContent=
-    'M '+Math.round(rearLeft*100)+'/'+Math.round(rearRight*100);
+  const averageRearMemory=(rearLeft+rearRight)/2;
+  const rearGripPercent=Math.round((1-(1-CFG.tires.rearSlipMinimumGripMultiplier)*averageRearMemory)*100);
+  rearMemoryHud.textContent='G '+rearGripPercent+'%';
 }
 
 function draw(){drawTrack();drawEffects();drawCar()}

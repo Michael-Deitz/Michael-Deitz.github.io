@@ -1,16 +1,9 @@
-# Drift Handling State Machine V3.1
+# Drift Handling State Machine V3.2
 
-Changes:
-- Added locked/welded differential behavior.
-- Both rear tires receive equal drive force.
-- Rear tire slip memory is synchronized.
-- Under throttle or handbrake, both rear tires retain the same wheelspin state.
-- Both rear tires can create smoke together.
-- Added a permanent V3.1 label at the bottom center of the screen.
-
-Upload all five files together:
-- index.html
-- style.css
-- car-config.js
-- app.js
-- manifest.json
+- Reverse force and speed range now match forward.
+- E-brake is 10% stronger.
+- Added a 0.28-second protected transition buffer.
+- Rear slip cannot recover during the protected buffer.
+- Tire scrub cannot reduce speed during the protected buffer.
+- Replaced M with G rear-grip percentage.
+- Bottom version label updated to V3.2.
