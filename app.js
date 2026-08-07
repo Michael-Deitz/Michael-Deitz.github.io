@@ -70,7 +70,7 @@ const cabin=new THREE.Mesh(
 );
 cabin.position.set(0,1.0,-.1);cabin.castShadow=true;visualGroup.add(cabin);
 
-const wheelGeometry=new THREE.BoxGeometry(.32,.62,.72);
+const wheelGeometry=new THREE.CylinderGeometry(.36,.36,.30,12);
 const wheelMaterial=new THREE.MeshStandardMaterial({color:0x151515,roughness:.9});
 const wheelData=[
   {x:-.88,z:-1.12,front:true,driven:false},
@@ -83,6 +83,7 @@ wheelData.forEach(w=>{
   const pivot=new THREE.Group();
   pivot.position.set(w.x,.42,w.z);
   const mesh=new THREE.Mesh(wheelGeometry,wheelMaterial);
+  mesh.rotation.z=Math.PI/2;
   mesh.castShadow=true;
   pivot.add(mesh);
   visualGroup.add(pivot);
@@ -239,8 +240,8 @@ function update(dt){
   carGroup.position.set(car.x,0,car.z);
   carGroup.rotation.y=car.heading;
   wheels.forEach(w=>{
-    if(w.front)w.pivot.rotation.y=car.steer;
-    w.mesh.rotation.x+=forwardSpeed*dt*1.6;
+    if(w.front)w.pivot.rotation.y=-car.steer;
+    w.mesh.rotation.y+=forwardSpeed*dt*1.6;
   });
 
   if((drifting||input.hand)&&speed()>4&&Math.random()<dt*35){
