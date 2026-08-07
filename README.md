@@ -1,19 +1,15 @@
-# Drift Third Person Test V3.3
+# Drift Third Person Test V3.3.1
 
-A simple 3D chase-camera view for handling evaluation.
+Visual-axis correction only. Handling values are unchanged.
 
-Files to upload:
-- index.html
-- style.css
-- car-config.js
-- app.js
-- manifest.json
+Fixes:
+- Rotated the 3D car model 180 degrees to match the physics forward direction.
+- Front wheels are now visually located at the front.
+- Only the two front wheels visibly steer.
+- Rear wheels are explicitly marked as driven.
+- Rear smoke is generated from the driven rear wheels.
+- Wheel rotation direction corrected.
+- Chase camera remains behind the actual direction of travel.
+- Bottom-center version label: V3.3.1 3D TEST.
 
-Notes:
-- Uses Three.js from jsDelivr.
-- Requires an internet connection when first loading.
-- Basic blocky coupe and flat drift pad only.
-- Visible front wheel steering.
-- Locked rear differential smoke from both rear tires.
-- Existing grip/entry/hold/transition/exit structure retained.
-- Bottom-center version label: V3.3 3D TEST.
+Upload all five files together.

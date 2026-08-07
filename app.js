@@ -53,33 +53,47 @@ const ring=new THREE.Mesh(
 ring.rotation.x=-Math.PI/2;ring.position.set(0,.018,-10);scene.add(ring);
 
 const carGroup=new THREE.Group();
+const visualGroup=new THREE.Group();
+visualGroup.rotation.y=Math.PI;
+carGroup.add(visualGroup);
 scene.add(carGroup);
 
 const body=new THREE.Mesh(
   new THREE.BoxGeometry(1.65,.48,3.55),
   new THREE.MeshStandardMaterial({color:C.visuals.bodyColor,metalness:.2,roughness:.55})
 );
-body.position.y=.58;body.castShadow=true;carGroup.add(body);
+body.position.y=.58;body.castShadow=true;visualGroup.add(body);
 
 const cabin=new THREE.Mesh(
   new THREE.BoxGeometry(1.35,.48,1.55),
   new THREE.MeshStandardMaterial({color:0x17212a,metalness:.05,roughness:.3})
 );
-cabin.position.set(0,1.0,-.1);cabin.castShadow=true;carGroup.add(cabin);
+cabin.position.set(0,1.0,-.1);cabin.castShadow=true;visualGroup.add(cabin);
 
 const wheelGeometry=new THREE.BoxGeometry(.32,.62,.72);
 const wheelMaterial=new THREE.MeshStandardMaterial({color:0x151515,roughness:.9});
 const wheelData=[
-  {x:-.88,z:-1.12,front:true},{x:.88,z:-1.12,front:true},
-  {x:-.88,z:1.12,front:false},{x:.88,z:1.12,front:false}
+  {x:-.88,z:-1.12,front:true,driven:false},
+  {x: .88,z:-1.12,front:true,driven:false},
+  {x:-.88,z: 1.12,front:false,driven:true},
+  {x: .88,z: 1.12,front:false,driven:true}
 ];
 const wheels=[];
 wheelData.forEach(w=>{
   const pivot=new THREE.Group();
   pivot.position.set(w.x,.42,w.z);
   const mesh=new THREE.Mesh(wheelGeometry,wheelMaterial);
-  mesh.castShadow=true;pivot.add(mesh);carGroup.add(pivot);
-  wheels.push({pivot,mesh,front:w.front,x:w.x,z:w.z});
+  mesh.castShadow=true;
+  pivot.add(mesh);
+  visualGroup.add(pivot);
+  wheels.push({
+    pivot,
+    mesh,
+    front:w.front,
+    driven:w.driven,
+    x:w.x,
+    z:w.z
+  });
 });
 
 const smoke=[];
@@ -225,14 +239,14 @@ function update(dt){
   carGroup.position.set(car.x,0,car.z);
   carGroup.rotation.y=car.heading;
   wheels.forEach(w=>{
-    if(w.front)w.pivot.rotation.y=-car.steer;
-    w.mesh.rotation.x-=forwardSpeed*dt*1.6;
+    if(w.front)w.pivot.rotation.y=car.steer;
+    w.mesh.rotation.x+=forwardSpeed*dt*1.6;
   });
 
   if((drifting||input.hand)&&speed()>4&&Math.random()<dt*35){
-    wheels.filter(w=>!w.front).forEach(w=>{
+    wheels.filter(w=>w.driven).forEach(w=>{
       const local=new THREE.Vector3(w.x,.28,w.z);
-      carGroup.localToWorld(local);
+      visualGroup.localToWorld(local);
       const puff=new THREE.Mesh(smokeGeo,smokeMat.clone());
       puff.position.copy(local);scene.add(puff);
       smoke.push({mesh:puff,life:.8});
