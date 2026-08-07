@@ -1,12 +1,11 @@
-# Drift Third Person Test V3.3.3
+# Drift Third Person Test V3.3.4
 
 Changes:
-- Inverted the actual driving/physics steering direction.
-- Visible front-wheel steering matches the corrected physics direction.
-- Each wheel now has a separate steering pivot and rolling pivot.
-- Round tires roll vertically around their left-to-right axle.
-- Tires no longer spin flat on a horizontal plane.
-- Handling values are otherwise unchanged.
-- Bottom-center version label: V3.3.3 3D TEST.
+- Corrected visible front-wheel steering direction.
+- Physical steering direction remains unchanged.
+- Disabled iPhone double-tap zoom.
+- Disabled pinch/gesture zoom events.
+- Kept non-selectable controls and touch handling.
+- Bottom-center version label: V3.3.4 3D TEST.
 
 Upload all five files together.

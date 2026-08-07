@@ -251,7 +251,7 @@ function update(dt){
   carGroup.rotation.y=car.heading;
   wheels.forEach(w=>{
     // Front wheels follow the corrected physical steering direction.
-    if(w.front)w.steerPivot.rotation.y=-car.steer;
+    if(w.front)w.steerPivot.rotation.y=car.steer;
 
     // Tire rolls around its left-to-right axle.
     w.rollPivot.rotation.x+=forwardSpeed*dt*1.6;
@@ -298,6 +298,18 @@ bind('left','left');bind('right','right');bind('gas','gas');bind('brake','brake'
 document.getElementById('resetBtn').addEventListener('pointerdown',e=>{e.preventDefault();reset()},{passive:false});
 document.addEventListener('contextmenu',e=>e.preventDefault(),{passive:false});
 document.addEventListener('selectstart',e=>e.preventDefault(),{passive:false});
+document.addEventListener('gesturestart',e=>e.preventDefault(),{passive:false});
+document.addEventListener('gesturechange',e=>e.preventDefault(),{passive:false});
+document.addEventListener('gestureend',e=>e.preventDefault(),{passive:false});
+
+let lastTouchEnd=0;
+document.addEventListener('touchend',e=>{
+  const now=Date.now();
+  if(now-lastTouchEnd<350){
+    e.preventDefault();
+  }
+  lastTouchEnd=now;
+},{passive:false});
 
 reset();
 let last=performance.now();
