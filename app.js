@@ -80,15 +80,25 @@ const wheelData=[
 ];
 const wheels=[];
 wheelData.forEach(w=>{
-  const pivot=new THREE.Group();
-  pivot.position.set(w.x,.42,w.z);
+  // Steering pivot rotates around vertical Y.
+  const steerPivot=new THREE.Group();
+  steerPivot.position.set(w.x,.42,w.z);
+
+  // Rolling pivot rotates around the tire axle (local X).
+  const rollPivot=new THREE.Group();
+
   const mesh=new THREE.Mesh(wheelGeometry,wheelMaterial);
+  // CylinderGeometry is built along Y. Rotate it so its axle lies across the car.
   mesh.rotation.z=Math.PI/2;
   mesh.castShadow=true;
-  pivot.add(mesh);
-  visualGroup.add(pivot);
+
+  rollPivot.add(mesh);
+  steerPivot.add(rollPivot);
+  visualGroup.add(steerPivot);
+
   wheels.push({
-    pivot,
+    steerPivot,
+    rollPivot,
     mesh,
     front:w.front,
     driven:w.driven,
@@ -173,7 +183,7 @@ function update(dt){
 
   updateState(dt,forwardSpeed,slipAngle);
 
-  const steerInput=(input.right?1:0)-(input.left?1:0);
+  const steerInput=(input.left?1:0)-(input.right?1:0);
   const drifting=drift.state==='ENTRY'||drift.state==='HOLD'||drift.state==='TRANSITION';
   const maxSteer=(drifting?C.steering.driftMaxAngleDeg:C.steering.gripMaxAngleDeg)*Math.PI/180;
   const target=steerInput*maxSteer;
@@ -240,8 +250,11 @@ function update(dt){
   carGroup.position.set(car.x,0,car.z);
   carGroup.rotation.y=car.heading;
   wheels.forEach(w=>{
-    if(w.front)w.pivot.rotation.y=-car.steer;
-    w.mesh.rotation.y+=forwardSpeed*dt*1.6;
+    // Front wheels follow the corrected physical steering direction.
+    if(w.front)w.steerPivot.rotation.y=-car.steer;
+
+    // Tire rolls around its left-to-right axle.
+    w.rollPivot.rotation.x+=forwardSpeed*dt*1.6;
   });
 
   if((drifting||input.hand)&&speed()>4&&Math.random()<dt*35){
