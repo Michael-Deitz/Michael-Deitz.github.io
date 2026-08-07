@@ -1,9 +1,19 @@
-# Drift Handling State Machine V3.2
+# Drift Third Person Test V3.3
 
-- Reverse force and speed range now match forward.
-- E-brake is 10% stronger.
-- Added a 0.28-second protected transition buffer.
-- Rear slip cannot recover during the protected buffer.
-- Tire scrub cannot reduce speed during the protected buffer.
-- Replaced M with G rear-grip percentage.
-- Bottom version label updated to V3.2.
+A simple 3D chase-camera view for handling evaluation.
+
+Files to upload:
+- index.html
+- style.css
+- car-config.js
+- app.js
+- manifest.json
+
+Notes:
+- Uses Three.js from jsDelivr.
+- Requires an internet connection when first loading.
+- Basic blocky coupe and flat drift pad only.
+- Visible front wheel steering.
+- Locked rear differential smoke from both rear tires.
+- Existing grip/entry/hold/transition/exit structure retained.
+- Bottom-center version label: V3.3 3D TEST.
