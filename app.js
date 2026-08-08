@@ -323,6 +323,28 @@ function update(dt){
   const rate=(Math.abs(target)<Math.abs(car.steer)?C.steering.returnSpeedDegPerSec:C.steering.inputSpeedDegPerSec)*Math.PI/180;
   car.steer += clamp(target-car.steer,-rate*dt,rate*dt);
 
+  // Calculate front and rear axle slip angles before any rear tire logic uses them.
+  const frontLatSpeed =
+    lateralSpeed +
+    car.yaw*C.chassis.cgToFrontAxle;
+
+  const rearLatSpeed =
+    lateralSpeed -
+    car.yaw*C.chassis.cgToRearAxle;
+
+  const frontSlipAngle =
+    Math.atan2(
+      frontLatSpeed,
+      Math.abs(forwardSpeed)+.75
+    ) +
+    car.steer;
+
+  const rearSlipAngle =
+    Math.atan2(
+      rearLatSpeed,
+      Math.abs(forwardSpeed)+.75
+    );
+
   if(input.gas&&forwardSpeed<C.engine.topSpeedMps){
     car.vx+=f.x*(C.engine.driveForce/C.chassis.mass)*dt;
     car.vz+=f.z*(C.engine.driveForce/C.chassis.mass)*dt;
@@ -379,9 +401,6 @@ function update(dt){
     targetRearLoad-car.rearLoadState
   )*loadBlend*C.tires.rearSpringRate;
 
-  // 2) Continuous slip-angle curve.
-  const slipCurve=rearSlipCurveMultiplier(slipAngle);
-
   // 3) Tire pressure shifts available grip.
   const pressureMult=rearPressureMultiplier();
 
@@ -400,42 +419,9 @@ function update(dt){
   const memoryMultiplier=
     1-(1-C.tires.rearMinimumGrip)*car.rearMemory;
 
-  let rearGrip=
-    C.tires.rearGrip *
-    slipCurve *
-    pressureMult *
-    spinGripMultiplier *
-    memoryMultiplier *
-    car.rearLoadState;
-
-  if(input.hand){
-    rearGrip*=C.brakes.handbrakeGripMultiplier;
-  }
-
   // ----- AXLE FORCE / YAW MODEL -----
-  // Velocity at each axle includes chassis yaw rate.
-  const frontLatSpeed =
-    lateralSpeed +
-    car.yaw*C.chassis.cgToFrontAxle;
-
-  const rearLatSpeed =
-    lateralSpeed -
-    car.yaw*C.chassis.cgToRearAxle;
-
-  // Positive steer is left in this project. Lateral velocity is positive to the
-  // car's right, so adding steer here gives the front tire's effective slip.
-  const frontSlipAngle =
-    Math.atan2(
-      frontLatSpeed,
-      Math.abs(forwardSpeed)+.75
-    ) +
-    car.steer;
-
-  const rearSlipAngle =
-    Math.atan2(
-      rearLatSpeed,
-      Math.abs(forwardSpeed)+.75
-    );
+  // Front/rear slip angles were calculated above so rear memory and axle forces
+  // use the same values for this frame.
 
   // Simple front tire: linear build, then capped lateral acceleration.
   const frontSlipRatio=clamp(
