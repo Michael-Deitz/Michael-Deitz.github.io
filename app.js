@@ -466,9 +466,20 @@ function update(dt){
 
   const frontBlend=1-Math.exp(-frontResponseRate*dt);
 
-  car.frontLatAccelState+=
-    (requestedFrontLatAccel-car.frontLatAccelState)*
-    frontBlend;
+  const neutralDriftCoast=
+    steerInput===0 &&
+    Math.abs(rearSlipAngle)>C.steering.driftNeutralHoldSlipDeg*Math.PI/180;
+
+  if(neutralDriftCoast){
+    // With no steering command, let the existing front force bleed away.
+    // Do not let it immediately build an opposite force and force a transition.
+    const decay=Math.exp(-C.steering.neutralFrontForceDecay*dt);
+    car.frontLatAccelState*=decay;
+  }else{
+    car.frontLatAccelState+=
+      (requestedFrontLatAccel-car.frontLatAccelState)*
+      frontBlend;
+  }
 
   const frontLatAccel=car.frontLatAccelState;
 
@@ -528,10 +539,47 @@ function update(dt){
     1
   );
 
+  let appliedYawTorque=yawTorque;
+
+  const neutralDrift=
+    steerInput===0 &&
+    Math.abs(rearSlipAngle)>C.steering.driftNeutralHoldSlipDeg*Math.PI/180;
+
+  if(neutralDrift && Math.abs(car.yaw)>.001){
+    const yawSign=Math.sign(car.yaw);
+    const torqueSign=Math.sign(appliedYawTorque);
+
+    // Opposing torque may settle the current drift rotation,
+    // but neutral steering cannot initiate rotation the other way.
+    if(torqueSign===-yawSign){
+      const maxNeutralBrake=
+        Math.abs(car.yaw)*
+        C.chassis.yawInertia/
+        Math.max(dt,.001)*
+        C.steering.neutralYawBrake;
+
+      appliedYawTorque=
+        torqueSign*
+        Math.min(Math.abs(appliedYawTorque),maxNeutralBrake);
+    }
+  }
+
+  const yawBeforeAxleForce=car.yaw;
+
   car.yaw+=
-    (yawTorque/C.chassis.yawInertia)*
+    (appliedYawTorque/C.chassis.yawInertia)*
     yawSpeedEffect*
     dt;
+
+  // Hard guard: while the player is neutral and the rear is still sliding,
+  // axle forces cannot flip yaw sign. A transition requires opposite input.
+  if(
+    neutralDrift &&
+    yawBeforeAxleForce!==0 &&
+    Math.sign(car.yaw)!==Math.sign(yawBeforeAxleForce)
+  ){
+    car.yaw=0;
+  }
 
   const damping=
     Math.abs(forwardSpeed)<C.tires.frontLowSpeedCutoffMps

@@ -2,7 +2,7 @@ window.CAR_CONFIG={
   id:"base-coupe-01",
   name:"Base Coupe",
   chassis:{mass:1180,wheelbase:2.52,trackWidth:1.52,yawInertia:1780,cgToFrontAxle:1.12,cgToRearAxle:1.40},
-  steering:{gripMaxAngleDeg:28,driftMaxAngleDeg:60,inputSpeedDegPerSec:150,returnSpeedDegPerSec:210,driftReturnSpeedDegPerSec:42,driftNeutralHoldSlipDeg:8},
+  steering:{gripMaxAngleDeg:28,driftMaxAngleDeg:60,inputSpeedDegPerSec:150,returnSpeedDegPerSec:210,driftReturnSpeedDegPerSec:42,driftNeutralHoldSlipDeg:8,neutralYawBrake:0.45,neutralFrontForceDecay:2.2},
   drivetrain:{type:"locked",diffLock:1},
   engine:{driveForce:9600,reverseForce:9600,topSpeedMps:33,rollingResistance:.992},
   brakes:{footBrakeForce:19000,handbrakeGripMultiplier:.135,handbrakeForce:7700},
