@@ -11,6 +11,7 @@ const wheelspinEl=document.getElementById('wheelspin');
 const latGEl=document.getElementById('latG');
 const rearLoadEl=document.getElementById('rearLoad');
 const rearPressureEl=document.getElementById('rearPressure');
+const axleSlipEl=document.getElementById('axleSlip');
 
 if(!window.THREE){
   loading.textContent='3D LIBRARY DID NOT LOAD';
@@ -340,7 +341,7 @@ function update(dt){
 
   let slipDemand=Math.min(
     1,
-    Math.abs(slipAngle)/.42 +
+    Math.abs(rearSlipAngle)/.42 +
     (input.gas?.18:0) +
     (input.hand?.55:0) +
     wheelspinRatio*.95
@@ -411,74 +412,115 @@ function update(dt){
     rearGrip*=C.brakes.handbrakeGripMultiplier;
   }
 
-  const frontCorrection=lateralSpeed*C.tires.frontGrip;
-  const rearCorrection=lateralSpeed*rearGrip;
-  const correction=(frontCorrection*.38+rearCorrection*.62)*dt;
-  car.vx-=r.x*correction;
-  car.vz-=r.z*correction;
+  // ----- AXLE FORCE / YAW MODEL -----
+  // Velocity at each axle includes chassis yaw rate.
+  const frontLatSpeed =
+    lateralSpeed +
+    car.yaw*C.chassis.cgToFrontAxle;
 
-  const authority=clamp(Math.abs(forwardSpeed)/5,0,1);
-  const meaningfulRearSlip=Math.abs(slipAngle)>.14;
-  const steeringYawGain=(drifting && meaningfulRearSlip) ? 1.30 : 1.95;
-  car.yaw+=car.steer*authority*steeringYawGain*dt;
+  const rearLatSpeed =
+    lateralSpeed -
+    car.yaw*C.chassis.cgToRearAxle;
 
-  // Once sideways, chassis rotation follows the direction of the slide.
-  // Countersteer now catches/controls yaw instead of directly steering
-  // the entire car into the opposite direction.
-  const slideDir=Math.sign(slipAngle||car.yaw||car.steer||1);
-  const slideEstablished=Math.abs(slipAngle)>.14;
+  // Positive steer is left in this project. Lateral velocity is positive to the
+  // car's right, so adding steer here gives the front tire's effective slip.
+  const frontSlipAngle =
+    Math.atan2(
+      frontLatSpeed,
+      Math.abs(forwardSpeed)+.75
+    ) +
+    car.steer;
 
-  if(drift.state==='ENTRY' && slideEstablished){
-    car.yaw+=slideDir*.82*drift.transfer*dt;
-  }
+  const rearSlipAngle =
+    Math.atan2(
+      rearLatSpeed,
+      Math.abs(forwardSpeed)+.75
+    );
 
-  if(drift.state==='HOLD' && input.gas && slideEstablished){
-    car.yaw+=slideDir*C.states.holdYaw*dt;
-  }
-
-  if(drift.state==='TRANSITION'){
-    const transitionDir=Math.sign(car.yaw||slipAngle||steerInput||1);
-    const transitionGain=slideEstablished ? 1 : .55;
-    car.yaw+=transitionDir*C.states.transitionYaw*drift.transfer*transitionGain*dt;
-  }
-
-  // Countersteer should catch the car once meaningful angle develops.
-  if(drifting && Math.abs(slipAngle)>.18){
-    const steerDir=Math.sign(car.steer);
-    const slideDirection=Math.sign(slipAngle);
-
-    if(steerDir!==0 && steerDir===-slideDirection){
-      car.yaw*=Math.pow(.975,dt*60);
-    }
-  }
-
-  // Chassis rotation grows progressively as the rear tire moves past peak slip.
-  // There is no binary "grip exceeded = drift" switch.
-  const slipDeg=Math.abs(slipAngle)*180/Math.PI;
-  const beyondPeak=clamp(
-    (slipDeg-C.tires.rearPeakSlipDeg)/
-    Math.max(1,C.tires.rearPlateauEndDeg-C.tires.rearPeakSlipDeg),
+  // Simple front tire: linear build, then capped lateral acceleration.
+  const frontSlipRatio=clamp(
+    Math.abs(frontSlipAngle)/
+    Math.max(.01,C.tires.frontPeakSlipDeg*Math.PI/180),
     0,
     1
   );
 
-  const loadInfluence=clamp(
-    (1.05-car.rearLoadState)*2.2 + car.transferLoad,
-    0,
-    1
+  let frontLatAccel=
+    -frontSlipAngle*
+    C.tires.frontCorneringGain*
+    C.tires.frontContactPatch;
+
+  frontLatAccel=clamp(
+    frontLatAccel,
+    -C.tires.frontMaxLatAccel,
+    C.tires.frontMaxLatAccel
   );
 
-  const rotationDemand=
-    beyondPeak *
-    (.55+.45*loadInfluence);
+  // Rear tire: continuous slip curve + load + pressure + wheelspin.
+  const rearCurve=rearSlipCurveMultiplier(rearSlipAngle);
 
+  const rearCapacity=
+    C.tires.rearMaxLatAccel *
+    rearCurve *
+    pressureMult *
+    spinGripMultiplier *
+    memoryMultiplier *
+    car.rearLoadState *
+    (input.hand?C.brakes.handbrakeGripMultiplier:1);
+
+  let rearLatAccel=
+    -rearSlipAngle*
+    C.tires.rearCorneringGain;
+
+  rearLatAccel=clamp(
+    rearLatAccel,
+    -rearCapacity,
+    rearCapacity
+  );
+
+  // Static axle load shares convert axle acceleration capability to force.
+  const rearLoadShare=C.tires.rearStaticLoadBias;
+  const frontLoadShare=1-rearLoadShare;
+
+  const frontLatForce=
+    frontLatAccel*
+    C.chassis.mass*
+    frontLoadShare;
+
+  const rearLatForce=
+    rearLatAccel*
+    C.chassis.mass*
+    rearLoadShare;
+
+  // Total sideways acceleration redirects the car.
+  const totalLatAccel=
+    (frontLatForce+rearLatForce)/
+    C.chassis.mass;
+
+  car.vx+=r.x*totalLatAccel*dt;
+  car.vz+=r.z*totalLatAccel*dt;
+
+  // Forces ahead/behind the CG naturally create chassis rotation.
+  // Front left force rotates left; rear left force resists that rotation.
+  const yawTorque=
+    -frontLatForce*C.chassis.cgToFrontAxle +
+     rearLatForce*C.chassis.cgToRearAxle;
+
+  car.yaw+=
+    (yawTorque/C.chassis.yawInertia)*
+    dt;
+
+  // Keep only a very small transition impulse. It represents transient
+  // suspension loading, not a command to drift.
   if(
-    rotationDemand>0 &&
-    Math.abs(car.steer)>.05 &&
-    Math.abs(forwardSpeed)>4
+    drift.state==='TRANSITION' &&
+    car.transferLoad>.05
   ){
-    const direction=Math.sign(car.yaw||slipAngle||car.steer||1);
-    car.yaw+=direction*rotationDemand*.95*dt;
+    car.yaw+=
+      Math.sign(car.steer||car.yaw||1)*
+      car.transferLoad*
+      .18*
+      dt;
   }
 
   const damping=drifting?.9965:.972;
@@ -545,6 +587,7 @@ function update(dt){
   latGEl.textContent='LG '+Math.abs(car.lateralG).toFixed(2);
   rearLoadEl.textContent='RL '+Math.round(car.rearLoadState*100)+'%';
   rearPressureEl.textContent='RP '+C.tires.rearPressurePsi;
+  axleSlipEl.textContent='F/R '+Math.round(Math.abs(frontSlipAngle)*180/Math.PI)+'/'+Math.round(Math.abs(rearSlipAngle)*180/Math.PI);
 }
 
 function bind(id,key){
