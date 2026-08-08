@@ -256,31 +256,15 @@ function update(dt){
   const lateralAccel=ax*r.x+az*r.z;
   const longitudinalAccel=ax*f.x+az*f.z;
 
+  // V3.9 baseline test: no artificial steering-flick load.
+  car.transferLoad=0;
+
   // Smooth displayed/used G values to avoid frame noise.
   const rawLatG=lateralAccel/C.tires.gravity;
   const rawLongG=longitudinalAccel/C.tires.gravity;
   const gBlend=1-Math.exp(-9*dt);
   car.lateralG+=(rawLatG-car.lateralG)*gBlend;
   car.longitudinalG+=(rawLongG-car.longitudinalG)*gBlend;
-
-  // Steering reversal creates a short transient weight-transfer impulse.
-  const rawSteerInput=(input.left?1:0)-(input.right?1:0);
-  if(
-    rawSteerInput!==0 &&
-    drift.lastSteerInput!==0 &&
-    rawSteerInput!==drift.lastSteerInput &&
-    Math.abs(forwardSpeed)>4
-  ){
-    car.transferLoad=Math.min(
-      1,
-      car.transferLoad+C.tires.flickTransferBoost
-    );
-  }
-  if(rawSteerInput!==0)drift.lastSteerInput=rawSteerInput;
-  car.transferLoad=Math.max(
-    0,
-    car.transferLoad-C.tires.flickTransferDecay*dt
-  );
 
   // Rear wheel speed is now separate from road speed.
   // A locked diff means both rear tires share the same wheel speed.
@@ -495,19 +479,6 @@ function update(dt){
   car.yaw+=
     (yawTorque/C.chassis.yawInertia)*
     dt;
-
-  // Keep only a very small transition impulse. It represents transient
-  // suspension loading, not a command to drift.
-  if(
-    drift.state==='TRANSITION' &&
-    car.transferLoad>.05
-  ){
-    car.yaw+=
-      Math.sign(car.steer||car.yaw||1)*
-      car.transferLoad*
-      .18*
-      dt;
-  }
 
   const damping=drifting?.9965:.972;
   car.yaw*=Math.pow(damping,dt*60);

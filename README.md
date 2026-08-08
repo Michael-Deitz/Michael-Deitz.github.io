@@ -1,15 +1,15 @@
-# Drift Third Person Test V3.8.1
+# Drift Third Person Test V3.9
 
-Bug fix for V3.8 black screen.
+Baseline physics cleanup.
 
-Cause:
-- rearSlipAngle was referenced before it was calculated.
-- That caused a JavaScript ReferenceError on the first physics frame.
+Changes:
+- Removed steering-flick weight-transfer boost completely.
+- Removed transition yaw impulse completely.
+- transferLoad is held at zero for this test.
+- Donut-capable front/rear axle force model from V3.8.1 retained.
+- Current loose/slippery rear tire tuning intentionally retained.
+- Wheelspin, rear pressure, rear suspension/load response, locked differential, round tires, reverse, e-brake, 3D camera, and mobile zoom blocking retained.
+- Bottom-center version: V3.9 3D TEST.
 
-Fix:
-- Front and rear axle slip angles are now calculated before rear tire memory and force calculations.
-- Duplicate later declarations removed.
-- V3.8 separate front/rear axle force and yaw model retained.
-- Bottom-center version: V3.8.1 3D TEST.
-
-Upload all five files together.
+Purpose:
+Use this as a clean baseline to tune grip without artificial flick behavior masking what the tire model is doing.
