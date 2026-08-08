@@ -127,7 +127,8 @@ const car={
   lateralG:0,
   longitudinalG:0,
   transferLoad:0,
-  rearLoadState:1
+  rearLoadState:1,
+  frontLatAccelState:0
 };
 const drift={state:'GRIP',timer:0,buffer:0,previousInput:0,transfer:0,lastSteerInput:0};
 
@@ -138,7 +139,7 @@ function landscape(){return innerWidth>innerHeight}
 function reset(){
   car.x=0;car.z=8;car.heading=Math.PI;
   car.vx=car.vz=car.yaw=car.steer=car.rearMemory=car.rearWheelOmega=0;
-  car.prevVx=car.prevVz=car.lateralG=car.longitudinalG=car.transferLoad=0;car.rearLoadState=1;
+  car.prevVx=car.prevVz=car.lateralG=car.longitudinalG=car.transferLoad=0;car.rearLoadState=1;car.frontLatAccelState=0;
   drift.state='GRIP';drift.timer=drift.buffer=drift.transfer=0;drift.previousInput=0;drift.lastSteerInput=0;
   smoke.forEach(s=>scene.remove(s.mesh));smoke.length=0;
 }
@@ -415,16 +416,42 @@ function update(dt){
     1
   );
 
-  let frontLatAccel=
+  // Front tires cannot create meaningful lateral force while stationary.
+  const frontSpeedEffect=clamp(
+    (Math.abs(forwardSpeed)-C.tires.frontLowSpeedCutoffMps)/
+    Math.max(.01,C.tires.frontFullEffectMps-C.tires.frontLowSpeedCutoffMps),
+    0,
+    1
+  );
+
+  let requestedFrontLatAccel=
     -frontSlipAngle*
     C.tires.frontCorneringGain*
-    C.tires.frontContactPatch;
+    C.tires.frontContactPatch*
+    frontSpeedEffect;
 
-  frontLatAccel=clamp(
-    frontLatAccel,
-    -C.tires.frontMaxLatAccel,
-    C.tires.frontMaxLatAccel
+  requestedFrontLatAccel=clamp(
+    requestedFrontLatAccel,
+    -C.tires.frontMaxLatAccel*frontSpeedEffect,
+    C.tires.frontMaxLatAccel*frontSpeedEffect
   );
+
+  // Tire force builds over time instead of appearing instantly.
+  const building=
+    Math.abs(requestedFrontLatAccel)>
+    Math.abs(car.frontLatAccelState);
+
+  const frontResponseRate=building
+    ? C.tires.frontForceBuildRate
+    : C.tires.frontForceReleaseRate;
+
+  const frontBlend=1-Math.exp(-frontResponseRate*dt);
+
+  car.frontLatAccelState+=
+    (requestedFrontLatAccel-car.frontLatAccelState)*
+    frontBlend;
+
+  const frontLatAccel=car.frontLatAccelState;
 
   // Rear tire: continuous slip curve + load + pressure + wheelspin.
   const rearCurve=rearSlipCurveMultiplier(rearSlipAngle);
@@ -476,17 +503,71 @@ function update(dt){
     -frontLatForce*C.chassis.cgToFrontAxle +
      rearLatForce*C.chassis.cgToRearAxle;
 
+  const yawSpeedEffect=clamp(
+    Math.abs(forwardSpeed)/C.tires.frontFullEffectMps,
+    0,
+    1
+  );
+
   car.yaw+=
     (yawTorque/C.chassis.yawInertia)*
+    yawSpeedEffect*
     dt;
 
-  const damping=drifting?.9965:.972;
+  const damping=
+    Math.abs(forwardSpeed)<C.tires.frontLowSpeedCutoffMps
+      ? .90
+      : (drifting?.9965:.972);
   car.yaw*=Math.pow(damping,dt*60);
   car.heading+=car.yaw*dt;
 
   const before=speed();
   car.vx*=Math.pow(C.engine.rollingResistance,dt*60);
   car.vz*=Math.pow(C.engine.rollingResistance,dt*60);
+
+  // Ground friction: always opposes motion and settles the car at rest.
+  const currentSpeed=Math.hypot(car.vx,car.vz);
+
+  if(currentSpeed>0){
+    const drag=Math.min(
+      currentSpeed,
+      C.tires.groundRollingDrag*dt
+    );
+    car.vx-=car.vx/currentSpeed*drag;
+    car.vz-=car.vz/currentSpeed*drag;
+  }
+
+  // Lateral scrub damps sideways chassis motion without directly steering it.
+  const postForward=car.vx*f.x+car.vz*f.z;
+  const postLateral=car.vx*r.x+car.vz*r.z;
+  const lateralDamp=Math.min(
+    Math.abs(postLateral),
+    C.tires.groundLateralDrag*dt
+  );
+
+  if(Math.abs(postLateral)>0){
+    const sign=Math.sign(postLateral);
+    car.vx-=r.x*sign*lateralDamp;
+    car.vz-=r.z*sign*lateralDamp;
+  }
+
+  // Prevent "steering in place" and residual numerical spinning.
+  const settledSpeed=Math.hypot(car.vx,car.vz);
+  if(
+    settledSpeed<C.tires.staticStopSpeedMps &&
+    !input.gas &&
+    !input.brake
+  ){
+    car.vx=0;
+    car.vz=0;
+  }
+
+  if(
+    settledSpeed<C.tires.frontLowSpeedCutoffMps &&
+    Math.abs(car.yaw)<C.tires.staticStopYawRate
+  ){
+    car.yaw=0;
+  }
 
   if(input.gas&&drift.state==='TRANSITION'&&drift.buffer>0){
     const after=speed();

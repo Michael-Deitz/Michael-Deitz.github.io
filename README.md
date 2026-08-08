@@ -1,15 +1,17 @@
-# Drift Third Person Test V3.9
+# Drift Third Person Test V4.0
 
-Baseline physics cleanup.
+Physics cleanup focused on ground friction and front tire response.
 
 Changes:
-- Removed steering-flick weight-transfer boost completely.
-- Removed transition yaw impulse completely.
-- transferLoad is held at zero for this test.
-- Donut-capable front/rear axle force model from V3.8.1 retained.
-- Current loose/slippery rear tire tuning intentionally retained.
-- Wheelspin, rear pressure, rear suspension/load response, locked differential, round tires, reverse, e-brake, 3D camera, and mobile zoom blocking retained.
-- Bottom-center version: V3.9 3D TEST.
+- Steering at 0 mph can no longer rotate the chassis.
+- Front lateral force fades in only once the car is moving.
+- Front lateral force builds/releases over time instead of appearing instantly.
+- Increased chassis yaw inertia.
+- Added rolling ground drag.
+- Added lateral ground drag.
+- Added near-stop velocity/yaw settling to eliminate numerical spinning.
+- Axle yaw torque is speed-scaled and vanishes near zero speed.
+- Existing front/rear axle slip model, locked diff, rear pressure, suspension/load, wheelspin, 3D camera, reverse, e-brake, round tires, and zoom blocking retained.
+- Bottom-center version: V4.0 3D TEST.
 
-Purpose:
-Use this as a clean baseline to tune grip without artificial flick behavior masking what the tire model is doing.
+Upload all five files together.
