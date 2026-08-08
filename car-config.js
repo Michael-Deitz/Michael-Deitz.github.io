@@ -9,17 +9,17 @@ window.CAR_CONFIG={
   tires:{
     frontGrip:11.5,
     rearGrip:6.8,
-    driftRearGrip:1.85,
-    rearSlipBuildRate:4.1,
-    rearSlipRecoveryRate:.30,
-    rearMinimumGrip:.27
+    driftRearGrip:2.15,
+    rearSlipBuildRate:3.6,
+    rearSlipRecoveryRate:.34,
+    rearMinimumGrip:.30
   },
   states:{
     entryDuration:.34,
     transitionDuration:.48,
     transitionBuffer:.28,
-    transitionYaw:2.35,
-    holdYaw:1.12
+    transitionYaw:2.20,
+    holdYaw:.92
   },
   camera:{distance:7.4,height:3.2,lookAhead:3.2,smoothing:5.2},
   visuals:{bodyColor:0xa92331}
