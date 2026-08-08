@@ -222,11 +222,36 @@ function update(dt){
   car.vz-=r.z*correction;
 
   const authority=clamp(Math.abs(forwardSpeed)/5,0,1);
-  car.yaw+=car.steer*authority*1.95*dt;
+  const steeringYawGain=drifting ? 1.15 : 1.95;
+  car.yaw+=car.steer*authority*steeringYawGain*dt;
 
-  if(drift.state==='ENTRY')car.yaw+=Math.sign(car.steer||1)*.85*drift.transfer*dt;
-  if(drift.state==='HOLD'&&input.gas)car.yaw+=Math.sign(car.steer||slipAngle||1)*C.states.holdYaw*dt;
-  if(drift.state==='TRANSITION')car.yaw+=Math.sign(steerInput||1)*C.states.transitionYaw*drift.transfer*dt;
+  // Once sideways, chassis rotation follows the direction of the slide.
+  // Countersteer now catches/controls yaw instead of directly steering
+  // the entire car into the opposite direction.
+  const slideDir=Math.sign(slipAngle||car.yaw||car.steer||1);
+
+  if(drift.state==='ENTRY'){
+    car.yaw+=slideDir*1.05*drift.transfer*dt;
+  }
+
+  if(drift.state==='HOLD'&&input.gas){
+    car.yaw+=slideDir*C.states.holdYaw*dt;
+  }
+
+  if(drift.state==='TRANSITION'){
+    const transitionDir=Math.sign(car.yaw||slipAngle||steerInput||1);
+    car.yaw+=transitionDir*C.states.transitionYaw*drift.transfer*dt;
+  }
+
+  // Countersteer should catch the car once meaningful angle develops.
+  if(drifting && Math.abs(slipAngle)>.18){
+    const steerDir=Math.sign(car.steer);
+    const slideDirection=Math.sign(slipAngle);
+
+    if(steerDir!==0 && steerDir===-slideDirection){
+      car.yaw*=Math.pow(.975,dt*60);
+    }
+  }
 
   const damping=drifting?.9965:.972;
   car.yaw*=Math.pow(damping,dt*60);
