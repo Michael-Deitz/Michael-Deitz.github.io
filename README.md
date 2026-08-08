@@ -1,17 +1,11 @@
-# Drift Third Person Test V4.0
+# Drift Third Person Test V4.1
 
-Physics cleanup focused on ground friction and front tire response.
+Drift neutral-steering fix.
 
 Changes:
-- Steering at 0 mph can no longer rotate the chassis.
-- Front lateral force fades in only once the car is moving.
-- Front lateral force builds/releases over time instead of appearing instantly.
-- Increased chassis yaw inertia.
-- Added rolling ground drag.
-- Added lateral ground drag.
-- Added near-stop velocity/yaw settling to eliminate numerical spinning.
-- Axle yaw torque is speed-scaled and vanishes near zero speed.
-- Existing front/rear axle slip model, locked diff, rear pressure, suspension/load, wheelspin, 3D camera, reverse, e-brake, round tires, and zoom blocking retained.
-- Bottom-center version: V4.0 3D TEST.
-
-Upload all five files together.
+- Normal steering return remains fast during grip driving.
+- While sideways, releasing steering now returns the wheels much more slowly.
+- Front lateral-force release is also slower during drift.
+- This prevents the front axle from instantly pulling the chassis straight when the player releases a steering button.
+- All V4.0 ground friction, axle-force, rear tire, wheelspin, pressure, suspension/load, and 3D camera behavior retained.
+- Bottom-center version: V4.1 3D TEST.

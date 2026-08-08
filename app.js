@@ -305,7 +305,26 @@ function update(dt){
   const drifting=drift.state==='ENTRY'||drift.state==='HOLD'||drift.state==='TRANSITION';
   const maxSteer=(drifting?C.steering.driftMaxAngleDeg:C.steering.gripMaxAngleDeg)*Math.PI/180;
   const target=steerInput*maxSteer;
-  const rate=(Math.abs(target)<Math.abs(car.steer)?C.steering.returnSpeedDegPerSec:C.steering.inputSpeedDegPerSec)*Math.PI/180;
+
+  const neutralDuringDrift=
+    steerInput===0 &&
+    Math.abs(slipAngle) >
+      C.steering.driftNeutralHoldSlipDeg*Math.PI/180;
+
+  let steerRateDeg;
+
+  if(neutralDuringDrift){
+    // When sideways, releasing the button should not instantly snap
+    // the front wheels to center and pull the chassis straight.
+    steerRateDeg=C.steering.driftReturnSpeedDegPerSec;
+  }else{
+    steerRateDeg=
+      Math.abs(target)<Math.abs(car.steer)
+        ? C.steering.returnSpeedDegPerSec
+        : C.steering.inputSpeedDegPerSec;
+  }
+
+  const rate=steerRateDeg*Math.PI/180;
   car.steer += clamp(target-car.steer,-rate*dt,rate*dt);
 
   // Calculate front and rear axle slip angles before any rear tire logic uses them.
@@ -443,7 +462,7 @@ function update(dt){
 
   const frontResponseRate=building
     ? C.tires.frontForceBuildRate
-    : C.tires.frontForceReleaseRate;
+    : (drifting ? C.tires.frontForceReleaseRate*.55 : C.tires.frontForceReleaseRate);
 
   const frontBlend=1-Math.exp(-frontResponseRate*dt);
 
