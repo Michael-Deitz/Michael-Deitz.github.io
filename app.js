@@ -7,6 +7,10 @@ const speedEl=document.getElementById('speed');
 const angleEl=document.getElementById('angle');
 const stateEl=document.getElementById('state');
 const gripEl=document.getElementById('grip');
+const wheelspinEl=document.getElementById('wheelspin');
+const latGEl=document.getElementById('latG');
+const rearLoadEl=document.getElementById('rearLoad');
+const rearPressureEl=document.getElementById('rearPressure');
 
 if(!window.THREE){
   loading.textContent='3D LIBRARY DID NOT LOAD';
@@ -112,16 +116,29 @@ const smokeGeo=new THREE.SphereGeometry(.16,8,8);
 const smokeMat=new THREE.MeshBasicMaterial({color:0xd7d7d7,transparent:true,opacity:.48,depthWrite:false});
 
 const input={left:false,right:false,gas:false,brake:false,hand:false};
-const car={x:0,z:8,heading:Math.PI,vx:0,vz:0,yaw:0,steer:0,rearMemory:0};
-const drift={state:'GRIP',timer:0,buffer:0,previousInput:0,transfer:0};
+const car={
+  x:0,z:8,heading:Math.PI,
+  vx:0,vz:0,yaw:0,steer:0,
+  rearMemory:0,
+  rearWheelOmega:0,
+  prevVx:0,
+  prevVz:0,
+  lateralG:0,
+  longitudinalG:0,
+  transferLoad:0,
+  rearLoadState:1
+};
+const drift={state:'GRIP',timer:0,buffer:0,previousInput:0,transfer:0,lastSteerInput:0};
 
 function clamp(v,a,b){return Math.max(a,Math.min(b,v))}
 function speed(){return Math.hypot(car.vx,car.vz)}
 function landscape(){return innerWidth>innerHeight}
 
 function reset(){
-  car.x=0;car.z=8;car.heading=Math.PI;car.vx=car.vz=car.yaw=car.steer=car.rearMemory=0;
-  drift.state='GRIP';drift.timer=drift.buffer=drift.transfer=0;drift.previousInput=0;
+  car.x=0;car.z=8;car.heading=Math.PI;
+  car.vx=car.vz=car.yaw=car.steer=car.rearMemory=car.rearWheelOmega=0;
+  car.prevVx=car.prevVz=car.lateralG=car.longitudinalG=car.transferLoad=0;car.rearLoadState=1;
+  drift.state='GRIP';drift.timer=drift.buffer=drift.transfer=0;drift.previousInput=0;drift.lastSteerInput=0;
   smoke.forEach(s=>scene.remove(s.mesh));smoke.length=0;
 }
 
@@ -181,12 +198,120 @@ function updateState(dt,forwardSpeed,slipAngle){
   }
 }
 
+
+function rearSlipCurveMultiplier(slipAngleRad){
+  const deg=Math.abs(slipAngleRad)*180/Math.PI;
+  const peak=C.tires.rearPeakSlipDeg;
+  const plateauStart=C.tires.rearPlateauStartDeg;
+  const plateauEnd=C.tires.rearPlateauEndDeg;
+  const falloffEnd=C.tires.rearFalloffEndDeg;
+
+  if(deg<=peak){
+    // Grip builds toward peak.
+    return 0.55+0.45*(deg/Math.max(1,peak));
+  }
+
+  if(deg<=plateauStart){
+    const t=(deg-peak)/Math.max(1,plateauStart-peak);
+    return 1-(1-C.tires.rearPlateauGrip)*t;
+  }
+
+  if(deg<=plateauEnd){
+    return C.tires.rearPlateauGrip;
+  }
+
+  if(deg<=falloffEnd){
+    const t=(deg-plateauEnd)/Math.max(1,falloffEnd-plateauEnd);
+    return C.tires.rearPlateauGrip+
+      (C.tires.rearFalloffGrip-C.tires.rearPlateauGrip)*t;
+  }
+
+  return C.tires.rearFalloffGrip;
+}
+
+function rearPressureMultiplier(){
+  const delta=C.tires.rearPressureOptimalPsi-C.tires.rearPressurePsi;
+  const mult=1+delta*C.tires.rearPressureGripPerPsi;
+  return clamp(
+    mult,
+    C.tires.rearPressureMinMultiplier,
+    C.tires.rearPressureMaxMultiplier
+  );
+}
+
 function update(dt){
   const f={x:Math.sin(car.heading),z:Math.cos(car.heading)};
   const r={x:Math.cos(car.heading),z:-Math.sin(car.heading)};
   const forwardSpeed=car.vx*f.x+car.vz*f.z;
   const lateralSpeed=car.vx*r.x+car.vz*r.z;
   const slipAngle=Math.atan2(lateralSpeed,Math.abs(forwardSpeed)+.1);
+
+  // Measure chassis acceleration from actual velocity change.
+  const ax=(car.vx-car.prevVx)/Math.max(dt,.001);
+  const az=(car.vz-car.prevVz)/Math.max(dt,.001);
+  car.prevVx=car.vx;
+  car.prevVz=car.vz;
+
+  const lateralAccel=ax*r.x+az*r.z;
+  const longitudinalAccel=ax*f.x+az*f.z;
+
+  // Smooth displayed/used G values to avoid frame noise.
+  const rawLatG=lateralAccel/C.tires.gravity;
+  const rawLongG=longitudinalAccel/C.tires.gravity;
+  const gBlend=1-Math.exp(-9*dt);
+  car.lateralG+=(rawLatG-car.lateralG)*gBlend;
+  car.longitudinalG+=(rawLongG-car.longitudinalG)*gBlend;
+
+  // Steering reversal creates a short transient weight-transfer impulse.
+  const rawSteerInput=(input.left?1:0)-(input.right?1:0);
+  if(
+    rawSteerInput!==0 &&
+    drift.lastSteerInput!==0 &&
+    rawSteerInput!==drift.lastSteerInput &&
+    Math.abs(forwardSpeed)>4
+  ){
+    car.transferLoad=Math.min(
+      1,
+      car.transferLoad+C.tires.flickTransferBoost
+    );
+  }
+  if(rawSteerInput!==0)drift.lastSteerInput=rawSteerInput;
+  car.transferLoad=Math.max(
+    0,
+    car.transferLoad-C.tires.flickTransferDecay*dt
+  );
+
+  // Rear wheel speed is now separate from road speed.
+  // A locked diff means both rear tires share the same wheel speed.
+  const roadOmega=Math.abs(forwardSpeed)/C.tires.rearWheelRadius;
+
+  if(input.gas){
+    car.rearWheelOmega+=C.tires.rearWheelSpinBuild*dt;
+  }else{
+    car.rearWheelOmega+=(
+      roadOmega-car.rearWheelOmega
+    )*Math.min(1,C.tires.rearWheelSpinDecay*dt);
+  }
+
+  // Handbrake rapidly forces the rear wheels toward lock.
+  if(input.hand){
+    car.rearWheelOmega+=(
+      0-car.rearWheelOmega
+    )*Math.min(1,10*dt);
+  }
+
+  // Keep wheel speed from going negative in this simple locked-diff model.
+  car.rearWheelOmega=Math.max(0,car.rearWheelOmega);
+
+  const wheelSurfaceSpeed=
+    car.rearWheelOmega*C.tires.rearWheelRadius;
+
+  const wheelspinRatio=
+    Math.max(
+      0,
+      (wheelSurfaceSpeed-Math.abs(forwardSpeed))/
+      Math.max(2,Math.abs(forwardSpeed))
+    );
 
   updateState(dt,forwardSpeed,slipAngle);
 
@@ -213,14 +338,78 @@ function update(dt){
     }
   }
 
-  let slipDemand=Math.min(1,Math.abs(slipAngle)/.42+(input.gas?.24:0)+(input.hand?.55:0));
-  if(slipDemand>.22)car.rearMemory=Math.min(1,car.rearMemory+C.tires.rearSlipBuildRate*slipDemand*dt);
+  let slipDemand=Math.min(
+    1,
+    Math.abs(slipAngle)/.42 +
+    (input.gas?.18:0) +
+    (input.hand?.55:0) +
+    wheelspinRatio*.95
+  );
+
+  if(slipDemand>.18){
+    car.rearMemory=Math.min(
+      1,
+      car.rearMemory+
+      C.tires.rearSlipBuildRate*slipDemand*dt
+    );
+  }
   else if(drift.state==='TRANSITION')car.rearMemory=Math.max(.82,car.rearMemory);
   else car.rearMemory=Math.max(0,car.rearMemory-C.tires.rearSlipRecoveryRate*(input.gas?.18:1)*dt);
 
-  let rearGrip=C.tires.rearGrip*(1-(1-C.tires.rearMinimumGrip)*car.rearMemory);
-  if(drifting)rearGrip=Math.min(rearGrip,C.tires.driftRearGrip);
-  if(input.hand)rearGrip*=C.brakes.handbrakeGripMultiplier;
+  // ----- REAR TIRE MODEL -----
+  // 1) Vertical load state from chassis G + suspension response.
+  const lateralTransfer =
+    Math.abs(car.lateralG)*C.tires.lateralTransferGain +
+    car.transferLoad;
+
+  const longitudinalTransfer =
+    car.longitudinalG*C.tires.longitudinalTransferGain;
+
+  const targetRearLoad=clamp(
+    C.tires.rearStaticLoadBias +
+    longitudinalTransfer -
+    lateralTransfer*C.tires.rearLoadSensitivity,
+    C.tires.rearLoadStateMin,
+    C.tires.rearLoadStateMax
+  );
+
+  const loadBlend=1-Math.exp(-C.tires.rearDampingRate*dt);
+  car.rearLoadState+=(
+    targetRearLoad-car.rearLoadState
+  )*loadBlend*C.tires.rearSpringRate;
+
+  // 2) Continuous slip-angle curve.
+  const slipCurve=rearSlipCurveMultiplier(slipAngle);
+
+  // 3) Tire pressure shifts available grip.
+  const pressureMult=rearPressureMultiplier();
+
+  // 4) Wheelspin reduces available friction capacity, but does not command yaw.
+  const spinT=clamp(
+    (wheelspinRatio-C.tires.rearWheelSpinGripStart)/
+    Math.max(.01,C.tires.rearWheelSpinGripFull-C.tires.rearWheelSpinGripStart),
+    0,
+    1
+  );
+
+  const spinGripMultiplier=
+    1-spinT*(1-C.tires.rearWheelSpinMinGrip);
+
+  // 5) Existing rear slip memory smooths transitions.
+  const memoryMultiplier=
+    1-(1-C.tires.rearMinimumGrip)*car.rearMemory;
+
+  let rearGrip=
+    C.tires.rearGrip *
+    slipCurve *
+    pressureMult *
+    spinGripMultiplier *
+    memoryMultiplier *
+    car.rearLoadState;
+
+  if(input.hand){
+    rearGrip*=C.brakes.handbrakeGripMultiplier;
+  }
 
   const frontCorrection=lateralSpeed*C.tires.frontGrip;
   const rearCorrection=lateralSpeed*rearGrip;
@@ -263,6 +452,35 @@ function update(dt){
     }
   }
 
+  // Chassis rotation grows progressively as the rear tire moves past peak slip.
+  // There is no binary "grip exceeded = drift" switch.
+  const slipDeg=Math.abs(slipAngle)*180/Math.PI;
+  const beyondPeak=clamp(
+    (slipDeg-C.tires.rearPeakSlipDeg)/
+    Math.max(1,C.tires.rearPlateauEndDeg-C.tires.rearPeakSlipDeg),
+    0,
+    1
+  );
+
+  const loadInfluence=clamp(
+    (1.05-car.rearLoadState)*2.2 + car.transferLoad,
+    0,
+    1
+  );
+
+  const rotationDemand=
+    beyondPeak *
+    (.55+.45*loadInfluence);
+
+  if(
+    rotationDemand>0 &&
+    Math.abs(car.steer)>.05 &&
+    Math.abs(forwardSpeed)>4
+  ){
+    const direction=Math.sign(car.yaw||slipAngle||car.steer||1);
+    car.yaw+=direction*rotationDemand*.95*dt;
+  }
+
   const damping=drifting?.9965:.972;
   car.yaw*=Math.pow(damping,dt*60);
   car.heading+=car.yaw*dt;
@@ -285,14 +503,19 @@ function update(dt){
   carGroup.position.set(car.x,0,car.z);
   carGroup.rotation.y=car.heading;
   wheels.forEach(w=>{
-    // Front wheels follow the corrected physical steering direction.
     if(w.front)w.steerPivot.rotation.y=car.steer;
 
-    // Tire rolls around its left-to-right axle.
-    w.rollPivot.rotation.x+=forwardSpeed*dt*1.6;
+    if(w.driven){
+      // Driven rear wheels use actual wheel speed and can visibly spin faster.
+      w.rollPivot.rotation.x+=car.rearWheelOmega*dt;
+    }else{
+      // Front wheels roll at road speed.
+      const frontOmega=forwardSpeed/C.tires.rearWheelRadius;
+      w.rollPivot.rotation.x+=frontOmega*dt;
+    }
   });
 
-  if((drifting||input.hand)&&speed()>4&&Math.random()<dt*35){
+  if((drifting||input.hand||wheelspinRatio>.12)&&speed()>4&&Math.random()<dt*(30+wheelspinRatio*45)){
     wheels.filter(w=>w.driven).forEach(w=>{
       const local=new THREE.Vector3(w.x,.28,w.z);
       visualGroup.localToWorld(local);
@@ -318,6 +541,10 @@ function update(dt){
   angleEl.textContent=Math.round(Math.abs(slipAngle)*180/Math.PI)+'°';
   stateEl.textContent=drift.state;
   gripEl.textContent='G '+Math.round((1-(1-C.tires.rearMinimumGrip)*car.rearMemory)*100)+'%';
+  wheelspinEl.textContent='WS '+Math.round(wheelspinRatio*100)+'%';
+  latGEl.textContent='LG '+Math.abs(car.lateralG).toFixed(2);
+  rearLoadEl.textContent='RL '+Math.round(car.rearLoadState*100)+'%';
+  rearPressureEl.textContent='RP '+C.tires.rearPressurePsi;
 }
 
 function bind(id,key){

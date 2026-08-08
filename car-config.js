@@ -7,12 +7,56 @@ window.CAR_CONFIG={
   engine:{driveForce:9600,reverseForce:9600,topSpeedMps:33,rollingResistance:.992},
   brakes:{footBrakeForce:19000,handbrakeGripMultiplier:.135,handbrakeForce:7700},
   tires:{
+    // FRONT: intentionally simple for now.
     frontGrip:11.5,
+    frontPeakSlipDeg:9,
+    frontContactPatch:1.0,
+
+    // REAR BASE
     rearGrip:6.8,
-    driftRearGrip:2.15,
+    driftRearGrip:2.5,
+    rearMinimumGrip:.30,
+    rearWheelRadius:.36,
+
+    // REAR SLIP CURVE
+    rearPeakSlipDeg:11,
+    rearPlateauStartDeg:14,
+    rearPlateauEndDeg:28,
+    rearPlateauGrip:.74,
+    rearFalloffEndDeg:52,
+    rearFalloffGrip:.40,
+
+    // REAR WHEELSPIN / LOCKED DIFF
+    rearWheelSpinBuild:8.5,
+    rearWheelSpinDecay:3.2,
+    rearWheelSpinGripStart:.10,
+    rearWheelSpinGripFull:.55,
+    rearWheelSpinMinGrip:.72,
+
+    // REAR LOAD / SUSPENSION
+    gravity:9.81,
+    cgHeight:.50,
+    lateralTransferGain:.82,
+    longitudinalTransferGain:.36,
+    flickTransferBoost:.22,
+    flickTransferDecay:2.4,
+    rearStaticLoadBias:.52,
+    rearSpringRate:1.0,
+    rearDampingRate:4.5,
+    rearLoadSensitivity:.20,
+    rearLoadStateMin:.72,
+    rearLoadStateMax:1.20,
+
+    // REAR TIRE PRESSURE
+    rearPressurePsi:28,
+    rearPressureOptimalPsi:26,
+    rearPressureGripPerPsi:.018,
+    rearPressureMinMultiplier:.84,
+    rearPressureMaxMultiplier:1.10,
+
+    // EXISTING MEMORY / EFFECTS
     rearSlipBuildRate:3.6,
-    rearSlipRecoveryRate:.34,
-    rearMinimumGrip:.30
+    rearSlipRecoveryRate:.34
   },
   states:{
     entryDuration:.34,

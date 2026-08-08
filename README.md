@@ -1,13 +1,28 @@
-# Drift Third Person Test V3.4.1
+# Drift Third Person Test V3.7
 
-Fixes V3.4 throttle steering regression.
+Major rear tire model change.
 
-Changes:
-- Restored full normal steering authority while rear slip is low.
-- Strong drift yaw now activates only after meaningful rear slip develops.
-- Drift state no longer activates as easily during ordinary throttle turns.
-- Retained the useful steering-flick / transition behavior.
-- Rear drift grip increased slightly from V3.4.
-- Automatic drift yaw reduced slightly.
-- Normal low- and medium-speed driving should feel like V3.3.4 again.
-- Bottom-center version: V3.4.1 3D TEST.
+Front:
+- Kept intentionally simple.
+
+Rear:
+- Continuous slip-angle curve.
+- Peak grip near 11 degrees.
+- Controlled drift plateau from ~14 to 28 degrees.
+- Gradual falloff after the plateau instead of instant loss of grip.
+- Rear grip depends on vertical load state.
+- Suspension response smooths how rear load changes.
+- Rear tire pressure shifts available grip.
+- Wheelspin reduces friction capacity but never directly commands yaw.
+- Locked differential remains.
+- Rear wheel rotational speed remains separate from vehicle speed.
+
+HUD:
+- WS = rear wheelspin ratio
+- LG = lateral G
+- RL = rear load state
+- RP = rear tire pressure PSI
+
+Bottom-center version: V3.7 3D TEST.
+
+Upload all five files together.
