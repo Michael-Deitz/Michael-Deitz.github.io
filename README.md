@@ -1,13 +1,13 @@
-# Drift Third Person Test V4.2
+# Drift Third Person Test V4.3
 
-Neutral-drift yaw fix.
+Front-end tuning pass.
 
 Changes:
-- Releasing steering during a drift can no longer force an opposite transition.
-- With neutral steering, front lateral force decays instead of immediately rebuilding in the opposite direction.
-- Neutral axle torque may reduce existing yaw, but cannot reverse its sign.
-- A left drift should keep carrying left until physics naturally settles it or the player commands right steering.
-- A right drift behaves the same in the opposite direction.
-- Intentional transitions still require opposite steering input.
-- All V4.1 tire, ground-friction, wheelspin, suspension/load, pressure, locked-diff, and 3D behavior retained.
-- Bottom-center version: V4.2 3D TEST.
+- Front cornering gain increased slightly.
+- Front maximum lateral authority increased slightly.
+- Front tire force builds faster.
+- Front tire force releases a little faster.
+- Drift steering return is slightly quicker.
+- V4.2 neutral-drift protection remains unchanged.
+- Rear tire model, wheelspin, locked differential, pressure, load/suspension response, ground friction, and 3D camera remain unchanged.
+- Bottom-center version: V4.3 3D TEST.
